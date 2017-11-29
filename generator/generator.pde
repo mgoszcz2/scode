@@ -1,4 +1,5 @@
-String typed = "W Szczebrzeszynie chrząszcz brzmi w trzcinie";
+String typed = "🍕";
+byte[] typedUtf8 = {};
 final int TEXT_SIZE = 10;
 final int MARGIN = 20;
 final int TIMING_RADIUS = 8;
@@ -8,7 +9,10 @@ boolean showGrid = false;
 boolean showColors = false;
 
 void resize() {
-    int len = (typed.length() + 1) & ~1;
+    try {
+        typedUtf8 = typed.getBytes("UTF-8");
+    } catch (Exception e) {};
+    int len = (typedUtf8.length + 1) & ~1;
     int w = MARGIN*2 + TIMING_RADIUS*21;
     int h = TEXT_SIZE + MARGIN*3 + len*TIMING_RADIUS*2 + TIMING_RADIUS*5;
     surface.setSize(w, h);
@@ -59,7 +63,7 @@ void finderDotMain(int x, int y) {
 }
 
 int lfsr = 0;
-void drawChar(char t, int i) {
+void drawChar(byte t, int i) {
     if (i == 0) lfsr = 1;
     if (!simpleMode) t ^= lfsr;
     for (int j = 0; j < 8; j++) {
@@ -75,12 +79,12 @@ void drawChar(char t, int i) {
 }
 
 void draw() {
-    int len = (typed.length() + 1) & ~1;
+    int len = (typedUtf8.length + 1) & ~1;
     background(255);
-    strokeWeight(0);
+    noStroke();
     ellipseMode(RADIUS);
 
-    if (typed.length() == 0) return;
+    if (typedUtf8.length == 0) return;
 
     translate(0, MARGIN);
     fill(0);
@@ -101,15 +105,16 @@ void draw() {
         ellipse(TIMING_RADIUS*2, TIMING_RADIUS*7 + i*TIMING_RADIUS*4, TIMING_RADIUS, TIMING_RADIUS);
     }
 
-    for (int i = 0; i < typed.length(); i++) {
-        drawChar(typed.charAt(i), i);
+    for (int i = 0; i < typedUtf8.length; i++) {
+        drawChar(typedUtf8[i], i);
     }
-    if ((typed.length() & 1) > 0) {
-        drawChar('\0', typed.length());
+    if ((typedUtf8.length & 1) > 0) {
+        drawChar((byte)0, typedUtf8.length);
     }
 
     if (showGrid) {
-        fill(#cccccc);
+        strokeWeight(0.5);
+        stroke(#cccccc);
         for (int i = 0; i < 21; i++) {
             line(i * TIMING_RADIUS, 0, i * TIMING_RADIUS, TIMING_RADIUS*(4+len*2));
         }

@@ -6,16 +6,16 @@ PImage makeImage(int width, int height) {
     return result;
 }
 
+PImage makeImage(PImage template) {
+    return makeImage(template.width, template.height);
+}
+
 color bwpixel(int val) {
     return val | val << 8 | val << 16 | 0xff << 24;
 }
 
 int channel(color col, int c) {
     return (col >> 16 - c * 8 & 0xff);
-}
-
-PImage makeImage(PImage template) {
-    return makeImage(template.width, template.height);
 }
 
 int[][] histogram_bins(PImage image) {
@@ -37,6 +37,27 @@ int histogram_max(int[][] bins) {
     return mb;
 }
 
+PImage binarize(PImage image, int k) {
+    int nbhd = k*2 + 1;
+    PImage result = makeImage(image.width - nbhd, image.height - nbhd);
+    image.loadPixels();
+    for (int y = 0; y < result.height; y++) {
+        for (int x = 0; x < result.width; x++) {
+            int total = 0;
+            for (int ky = 0; ky <= nbhd; ky++) {
+                for (int kx = 0; kx <= nbhd; kx++) {
+                    total += image.pixels[(y + ky)*image.width + x + kx] & 0xff;
+                }
+            }
+            int avg = (int)(total / (nbhd * nbhd));
+            int bw = image.pixels[y * result.height + x] & 0xff;
+            result.pixels[y * result.width + x] = bwpixel(bw > avg ? 0 : 255);
+        }
+    }
+    result.updatePixels();
+    return result;
+}
+
 PImage greyscale(PImage image) {
     PImage result = makeImage(image);
     image.loadPixels();
@@ -45,41 +66,37 @@ PImage greyscale(PImage image) {
         int v = (channel(c, 0) + channel(c, 1) + channel(c, 2)) / 3;
         result.pixels[i] = bwpixel(v);
     }
+    result.updatePixels();
     return result;
 }
 
-// Crappy, not even good nearest
-PImage downscale_nearest(PImage image, int scale) {
-    PImage result = makeImage(image.width / scale, image.height / scale);
-    for (int y = 0; y < image.height / scale; y++) {
-        for (int x = 0; x < image.width / scale; x++) {
-            result.pixels[y * result.width + x] = image.pixels[y * scale * image.width + x * scale];
-        }
-    }
-    return result;
-}
-
-PImage downscale(PImage image, float scale) {
-    PImage result = makeImage((int)(image.width / (scale + 1)), (int)(image.height / (scale + 1)));
+PImage bw_resize(PImage image, float scale) {
+    PImage result = makeImage(ceil(image.width * scale)-1, ceil(image.height * scale)-1);
+    image.loadPixels();
     for (int y = 0; y < result.height; y++) {
         for (int x = 0; x < result.width; x++) {
-            int sum = 0;
-            int c = 0;
-            for (int dy = 0; dy <= scale; dy++) {
-                for (int dx = 0; dx <= scale; dx++) {
-                    sum += image.pixels[(int)(y * scale + dy) * image.width + (int)(x * scale) + dx] & 0xff;
-                    c++;
-                }
-            }
-            result.pixels[y * result.width + x] = bwpixel(sum / c);
+            int px = (int)(x / scale);
+            int py = (int)(y / scale);
+            float dx = x / scale - px;
+            float dy = y / scale - py;
+
+            int ix = py * image.width + px;
+            int a = image.pixels[ix] & 0xff;
+            int b = image.pixels[ix + 1] & 0xff;
+            int c = image.pixels[ix + image.width] & 0xff;
+            int d = image.pixels[ix + image.width + 1] & 0xff;
+            int gray = (int)(a*(1-dx)*(1-dy) +  b*dx*(1-dy) + c*dy*(1-dx) + d*dx*dy);
+            result.pixels[y * result.width + x] = bwpixel(gray);
         }
     }
+    result.updatePixels();
     return result;
 }
 
 // Assumes b/w
 PImage equalize(PImage image) {
     PImage result = makeImage(image);
+    image.loadPixels();
     int[][] bins = histogram_bins(image);
     int mb = histogram_max(bins);
     float[] cumulative = new float[256];
@@ -95,14 +112,17 @@ PImage equalize(PImage image) {
         result.pixels[i] = bwpixel((int)(cumulative[image.pixels[i] & 0xff] * 255));
     }
 
+    result.updatePixels();
     return result;
 }
 
 PImage treshold(PImage image, int val) {
     PImage result = makeImage(image);
+    image.loadPixels();
     for (int i = 0; i < result.pixels.length; i++) {
         result.pixels[i] = bwpixel((image.pixels[i] & 0xff) < val ? 0 : image.pixels[i] & 0xff);
     }
+    result.updatePixels();
     return result;
 }
 
@@ -124,6 +144,7 @@ PImage convolute(PImage image, float[][] kernel) {
             result.pixels[(y - h) * result.width + x - w] = bwpixel((int)Math.abs(sum) & 0xff);
         }
     }
+    result.updatePixels();
     return result;
 }
 
@@ -131,6 +152,7 @@ PImage median(PImage image, int wh) {
     int w = wh * 2;
     PImage result = makeImage(image.width - w, image.height - w);
     int[] window = new int[w * w];
+    image.loadPixels();
 
     for (int y = wh; y < image.height - wh; y++) {
         for (int x = wh; x < image.width - wh; x++) {
@@ -144,6 +166,7 @@ PImage median(PImage image, int wh) {
             result.pixels[(y - wh) * result.width + x - wh] = bwpixel(window[window.length / 2]);
         }
     }
+    result.updatePixels();
     return result;
 }
 

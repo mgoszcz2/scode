@@ -4,7 +4,7 @@ PImage staticImage;
 Capture camera;
 boolean frameResized;
 int gridPosition;
-final int GOAL_SIZE = 200;
+final int GOAL_SIZE = 250;
 final int GRID_WIDTH = 3;
 final int GRID_HEIGHT = 2;
 final int GRID_HEADER = 30;
@@ -71,14 +71,16 @@ void draw() {
         frameImage = camera;
     } else return;
 
-    drawGrid("Origianal", downscale_nearest(frameImage, 4));
-    frameImage = drawGrid("Greyscale", greyscale(frameImage));
+    // frameImage = drawGrid("Greyscale", greyscale(frameImage));
     // frameImage = drawGrid("Downscale", downscale_nearest(frameImage, 4));
-    frameImage = downscale_nearest(frameImage, 4);
+    // frameImage = downscale_nearest(frameImage, 4);
+    frameImage = drawGrid("Binarize", binarize(frameImage, 5));
+    frameImage = drawGrid("Resized", bw_resize(frameImage, 0.40));
     frameImage = drawGrid("Median blur", median(frameImage, 2));
     frameImage = drawGrid("Sobel operator", edge(frameImage));
-    frameImage = drawGrid("Median blur", median(frameImage, 2));
+    // frameImage = drawGrid("Median blur", median(frameImage, 2));
     // frameImage = drawGrid("Equalize",  equalize(frameImage));
-    frameImage = drawGrid("Treshold", treshold(frameImage, 50));
-    // if (staticImage != null) noLoop();
+    // frameImage = drawGrid("Treshold", treshold(frameImage, 50));
+    println("Looping");
+    if (staticImage != null) noLoop();
 }
