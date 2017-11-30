@@ -4,10 +4,15 @@ PImage staticImage;
 Capture camera;
 boolean frameResized;
 int gridPosition;
-final int GOAL_SIZE = 250;
-final int GRID_WIDTH = 3;
+int lastOperation = 0;
+boolean looping = true;
+int sampleCount = 0;
+
+final int GOAL_SIZE = 240;
+final int GRID_WIDTH = 4;
 final int GRID_HEIGHT = 2;
-final int GRID_HEADER = 30;
+final int GRID_HEADER = 60;
+float[] mean = new float[GRID_WIDTH * GRID_HEIGHT];
 
 void resize(int width, int height) {
     int ratio = (height + GRID_HEADER) / GOAL_SIZE;
@@ -15,34 +20,50 @@ void resize(int width, int height) {
     frameResized = true;
 }
 
+void keyPressed() {
+    if (key == ' ' && staticImage == null) {
+        looping = !looping;
+        if (looping) {
+            camera.start();
+            loop();
+        } else {
+            camera.stop();
+            noLoop();
+        }
+    }
+}
+
 PImage drawGrid(String desc, PImage img) {
     assert gridPosition < GRID_WIDTH * GRID_HEIGHT;
+    float took = millis() - lastOperation;
+    mean[gridPosition] = mean[gridPosition] * (sampleCount - 1) / sampleCount + took / sampleCount;
+
     int w = width / GRID_WIDTH;
     int h = height / GRID_HEIGHT;
-    int x = w * (gridPosition % GRID_WIDTH);
-    int y = h * (gridPosition / GRID_WIDTH);
-    gridPosition++;
-    image(img, x, y + GRID_HEADER, w, h - GRID_HEADER);
-    textAlign(LEFT, TOP);
 
-    strokeWeight(0);
-    stroke(0); // Necessery even with weight 0 for some reason (otherwise weird red lines happen)
-    fill(0);
-    rect(x, y, w, GRID_HEADER);
-    strokeWeight(1);
-    stroke(255);
-    rect(x + w - 256, y, 256 - 1, GRID_HEADER - 1);
-    image(histogram(img, GRID_HEADER - 2), x + w - 256, y + 1);
+    pushMatrix();
+    translate(w * (gridPosition % GRID_WIDTH), h * (gridPosition / GRID_WIDTH));
+    noStroke();
+
+    image(img, 0, GRID_HEADER, w, h - GRID_HEADER);
+    image(histogram(img, GRID_HEADER / 2 - 1), 0, 0, w, GRID_HEADER / 2);
 
     fill(255);
-    textSize(16);
-    text(desc, x + 10, y + 10);
+    textSize(GRID_HEADER / 4);
+    textAlign(LEFT, CENTER);
+    text(desc, 10, 3 * GRID_HEADER / 4 - 1);
+    textAlign(RIGHT, CENTER);
+    text(String.format("%.0f/%.0f ms", took, mean[gridPosition]), w - 10, 3 * GRID_HEADER / 4 - 1);
+
+    lastOperation = millis();
+    popMatrix();
+    gridPosition++;
     return img;
 }
 
 void setup() {
     size(0, 0);
-    // frameRate(10);
+    frameRate(10);
     surface.setTitle("S*Code");
     if (args != null && args.length > 0) {
         staticImage = loadImage(args[0]);
@@ -71,16 +92,17 @@ void draw() {
         frameImage = camera;
     } else return;
 
-    // frameImage = drawGrid("Greyscale", greyscale(frameImage));
-    // frameImage = drawGrid("Downscale", downscale_nearest(frameImage, 4));
-    // frameImage = downscale_nearest(frameImage, 4);
-    frameImage = drawGrid("Binarize", binarize(frameImage, 5));
-    frameImage = drawGrid("Resized", bw_resize(frameImage, 0.40));
-    frameImage = drawGrid("Median blur", median(frameImage, 2));
-    frameImage = drawGrid("Sobel operator", edge(frameImage));
-    // frameImage = drawGrid("Median blur", median(frameImage, 2));
-    // frameImage = drawGrid("Equalize",  equalize(frameImage));
-    // frameImage = drawGrid("Treshold", treshold(frameImage, 50));
-    println("Looping");
-    if (staticImage != null) noLoop();
+    sampleCount++;
+    lastOperation = millis();
+    drawGrid("Original", frameImage);
+    frameImage = drawGrid("Greyscale", greyscale(frameImage));
+    frameImage = drawGrid("Resized", resize(frameImage, 0.40));
+    frameImage = drawGrid("Blur", gaussian(frameImage, 1.0));
+
+    PImage maskImage = drawGrid("Edge mask", edges(frameImage));
+    maskImage = drawGrid("Binarize mask", binarize(maskImage, 3));
+
+    frameImage = drawGrid("Sobel operator", sobel(frameImage));
+    drawGrid("Masked", mask(frameImage, maskImage));
+    // if (staticImage != null) noLoop();
 }
