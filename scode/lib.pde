@@ -10,7 +10,7 @@ PImage makeImage(PImage template) {
     return makeImage(template.width, template.height);
 }
 
-PImage binarize(PImage image, int k) {
+PImage binarizeOld(PImage image, int k) {
     //TODO: Use integer image here
     int nbhd = k*2 + 1;
     PImage result = makeImage(image.width - nbhd, image.height - nbhd);
@@ -23,9 +23,55 @@ PImage binarize(PImage image, int k) {
                     total += image.pixels[(y + ky)*image.width + x + kx] & 0xff;
                 }
             }
-            int avg = (int)(total / (nbhd * nbhd) + 10) & 0xff;
+            int avg = (int)(total / (nbhd * nbhd)) & 0xff;
             int bw = image.pixels[y * image.width + x] & 0xff;
             result.pixels[y * result.width + x] = bw > avg ? 255 : 0;
+            // result.pixels[y * result.width + x] = (int)avg;
+        }
+    }
+    result.updatePixels();
+    return result;
+}
+
+// Based on Adaptive Thresholding Using the Integral Image
+PImage binarize(PImage image) {
+    // 12 just works well
+    int k = min(image.width, image.height) / 12;
+    // int k = 3;
+    int[] summed = new int[image.height * image.width];
+    PImage result = makeImage(image);
+
+    summed[0] = image.pixels[0] & 0xff;
+    for (int x = 1; x < image.width; x++) {
+        summed[x] = summed[x - 1] + (image.pixels[x] & 0xff);
+    }
+    for (int y = 1; y < image.height; y++) {
+        summed[y*image.width] = summed[(y - 1)*image.width] + (image.pixels[y*image.width] & 0xff);
+        for (int x = 1; x < image.width; x++) {
+            int ix = y*image.width + x;
+            summed[ix] = summed[ix - image.width] + summed[ix - 1] - summed[ix - image.width - 1] + (image.pixels[ix] & 0xff);
+        }
+    }
+
+    for (int y = 0; y < image.height; y++) {
+        int kt = min(k, y);
+        int kb = min(y + k, image.height - 1) - y;
+
+        for (int x = 0; x < image.width; x++) {
+            int kl = min(k, x);
+            int kr = min(x + k, image.width - 1) - x;
+
+            int window = (kl + kr) * (kt + kb);
+            int ix = y*image.width + x;
+            int t0 = summed[ix + kb*image.width + kr];
+            int t1 = summed[ix + kb*image.width - kl];
+            int t2 = summed[ix - kt*image.width + kr];
+            int t3 = summed[ix - kt*image.width - kl];
+
+            int avg = (t0 - t1 - t2 + t3) * 90 / 100;
+            int bw = (image.pixels[ix] & 0xff) * window;
+            result.pixels[y * result.width + x] = bw >= avg ? 255 : 0;
+            // result.pixels[y * result.width + x] = (int)(avg / window);
         }
     }
     result.updatePixels();
@@ -116,19 +162,6 @@ PImage gaussian(PImage image, float sigma) {
     return convolute(image, kernel);
 }
 
-void normalize(PImage image) {
-    int mn = image.pixels[0], mx = mn;
-    for (int i = 1; i < image.pixels.length; i++) {
-        mn = min(mn, image.pixels[i]);
-        mx = max(mx, image.pixels[i]);
-    }
-    float d = mx - mn;
-    for (int i = 0; i < image.pixels.length; i++) {
-        image.pixels[i] = (int)(0xff * ((image.pixels[i] - mn) / d));
-    }
-    image.updatePixels();
-}
-
 void absolute(PImage image) {
     for (int i = 0; i < image.pixels.length; i++) {
         image.pixels[i] = Math.abs(image.pixels[i]);
@@ -138,43 +171,37 @@ void absolute(PImage image) {
 
 //FIXME Just copy of paste of sobel
 PImage edges(PImage image) {
-    float[][] xkernel = {{1, 0, -1},
-                         {2, 0, -2},
-                         {1, 0, -1}};
-    float[][] ykernel = {{1, 2, 1},
-                         {0, 0, 0},
-                         {-1, -2, -1}};
-    PImage ix = convolute(image, xkernel);
-    PImage iy = convolute(image, ykernel);
-    absolute(ix);
-    absolute(iy);
-    normalize(ix);
-    normalize(iy);
-    for (int i = 0; i < ix.pixels.length; i++) {
-        int x = ix.pixels[i];
-        int y = iy.pixels[i];
-        ix.pixels[i] = (int)Math.sqrt(x * x + y * y);
-    }
-    return ix;
-}
+    PImage result = makeImage(image);
+    int mn = Integer.MAX_VALUE, mx = Integer.MIN_VALUE;
 
-PImage sobel(PImage image) {
-    float[][] xkernel = {{1, 0, -1},
-                         {2, 0, -2},
-                         {1, 0, -1}};
-    float[][] ykernel = {{1, 2, 1},
-                         {0, 0, 0},
-                         {-1, -2, -1}};
-    PImage ix = convolute(image, xkernel);
-    PImage iy = convolute(image, ykernel);
-    normalize(ix);
-    normalize(iy);
-    for (int i = 0; i < ix.pixels.length; i++) {
-        int x = ix.pixels[i];
-        int y = iy.pixels[i];
-        ix.pixels[i] = (x << 16) | (y << 8) | 0xff;
+    for (int y = 1; y < image.height - 1; y++) {
+        for (int x = 1; x < image.width - 1; x++) {
+            int ix = y * image.width + x;
+            int t00 = image.pixels[ix - image.width - 1];
+            int t10 = image.pixels[ix - image.width];
+            int t20 = image.pixels[ix - image.width + 1];
+            int t01 = image.pixels[ix - 1];
+            int t21 = image.pixels[ix + 1];
+            int t02 = image.pixels[ix + image.width - 1];
+            int t12 = image.pixels[ix + image.width];
+            int t22 = image.pixels[ix + image.width + 1];
+
+            int dy = (t00 + 2*t01 + t02 - t20 - 2*t21 - t22) / 4;
+            int dx = (t00 + 2*t10 + t20 - t02 - 2*t12 - t22) / 4;
+            int v = (int)sqrt(dy * dy + dx * dx);
+            result.pixels[ix] = v;
+            mn = min(mn, v);
+            mx = max(mx, v);
+        }
     }
-    return ix;
+
+    float d = mx - mn;
+    for (int i = 0; i < image.pixels.length; i++) {
+        result.pixels[i] = (int)(0xff * ((result.pixels[i] - mn) / d));
+    }
+
+    result.updatePixels();
+    return result;
 }
 
 PImage mask(PImage image, PImage mask) {
@@ -220,10 +247,11 @@ PImage histogram(PImage image, int h) {
         result.fill(colors[c], 128);
         result.strokeWeight(1);
         for (int i = 1; i < 255; i++) {
-            result.vertex(i - 1, h - h * min(mb, bins[c][i]) / mb);
+            // Plus 1 important on high density displays
+            result.vertex(i - 1, h + 1 - h * min(mb, bins[c][i]) / mb);
         }
-        result.vertex(253, h);
-        result.vertex(0, h);
+        result.vertex(253, h + 2);
+        result.vertex(0, h + 2);
         result.endShape();
     }
 
