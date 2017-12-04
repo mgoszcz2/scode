@@ -59,14 +59,13 @@ PImage drawGrid(String desc, PImage img) {
 
     if (showHeaders) {
         image(img, 0, GRID_HEADER, w, h - GRID_HEADER);
-        image(histogram(img, GRID_HEADER / 2 - 1), 0, 0, w, GRID_HEADER / 2);
+        image(new Histogram(GRID_HEADER / 2 - 1).run(img), 0, 0, w, GRID_HEADER / 2);
         fill(255);
         textSize(GRID_HEADER / 4);
         textAlign(LEFT, BOTTOM);
         text(desc, 5, GRID_HEADER);
         textAlign(RIGHT, BOTTOM);
         textSize(GRID_HEADER / 10);
-        println(desc + " took " + took + "ms");
         text(String.format("%dx%d  %.0f/%.0f ms", img.width, img.height, took, mean[gridPosition]), w - 5, GRID_HEADER);
     } else {
         image(img, 0, 0, w, h);
@@ -112,18 +111,14 @@ void draw() {
     sampleCount++;
     lastOperation = millis();
 
-    PImage image = resize(frameImage, 0.2);
+    PImage image = new Resize(0.2).run(frameImage);
 
-    drawGrid("Original", frameImage);
-    image = drawGrid("Greyscale", greyscale(image));
-    image = drawGrid("Blur", gaussian(image, 2.0));
-
-    drawGrid("Binarize (Old)", binarizeOld(image, 3));
-    PImage binary = drawGrid("Binarize", binarize(image));
-
-    PImage edges = drawGrid("Edges", edges(image));
-    drawGrid("Edges -> Binarize (Old)", binarizeOld(edges, 3));
-    drawGrid("Edges -> Binarize", binarize(edges));
+    drawGrid("Original", image);
+    image = drawGrid("Greyscale", new Greyscale().run(image));
+    image = drawGrid("Blur", new Gaussian(2.0).run(image));
+    drawGrid("Binarize", new Binarize().run(image));
+    PImage edges = drawGrid("Edges", new Edges().run(image));
+    drawGrid("Edges -> Binarize", new Binarize().run(edges));
 
     while (gridPosition < GRID_WIDTH * GRID_HEIGHT) {
         int w = width / GRID_WIDTH;
