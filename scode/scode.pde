@@ -10,9 +10,9 @@ boolean looping = true;
 int sampleCount = 0;
 boolean showHeaders = true;
 
-final int SIZE = 200;
-final int GRID_WIDTH = 4;
-final int GRID_HEIGHT = 3;
+final int SIZE = 500;
+final int GRID_WIDTH = 1;
+final int GRID_HEIGHT = 1;
 final int GRID_HEADER = 60;
 float[] mean = new float[GRID_WIDTH * GRID_HEIGHT];
 
@@ -111,14 +111,11 @@ void draw() {
     sampleCount++;
     lastOperation = millis();
 
-    PImage image = new Resize(0.2).run(frameImage);
-
-    drawGrid("Original", image);
-    image = drawGrid("Greyscale", new Greyscale().run(image));
-    image = drawGrid("Blur", new Gaussian(2.0).run(image));
-    drawGrid("Binarize", new Binarize().run(image));
-    PImage edges = drawGrid("Edges", new Edges().run(image));
-    drawGrid("Edges -> Binarize", new Binarize().run(edges));
+    PImage image = new Greyscale().run(frameImage);
+    image = new Resize(0.2).run(image);
+    image = new Gaussian(2.0).run(image);
+    image = new Edges().run(image);
+    drawGrid("Done", image);
 
     while (gridPosition < GRID_WIDTH * GRID_HEIGHT) {
         int w = width / GRID_WIDTH;

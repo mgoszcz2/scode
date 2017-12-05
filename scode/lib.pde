@@ -3,8 +3,14 @@ abstract class Filter {
 }
 
 abstract class ManagedFilter extends Filter {
-    int width(PImage input) { return input.width; }
-    int height(PImage input) { return input.height; }
+    int width(PImage input) {
+        return input.width;
+    }
+
+    int height(PImage input) {
+        return input.height;
+    }
+
     abstract void runWithStore(PImage input, PImage store);
 
     final PImage run(PImage input) {

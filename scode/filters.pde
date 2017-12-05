@@ -84,62 +84,62 @@ class Resize extends ManagedFilter {
 }
 
 class Gaussian extends ManagedFilter {
-    float[][] kernel;
+    float[] kernel;
 
     Gaussian(float sigma) {
         // Thanks https://patrickfuller.github.io/gaussian-blur-image-processing-for-scientists-and-engineers-part-4/
-        kernel = new float[10][10];
-        int uc, vc;
-        float g, sum = 0;
-
-        int t = millis();
-        for(int u=0; u<kernel.length; u++) {
-            for(int v=0; v<kernel[0].length; v++) {
-                // Center the Gaussian sample so max is at u,v = 10,10
-                uc = u - (kernel.length-1)/2;
-                vc = v - (kernel[0].length-1)/2;
-                // Calculate and save
-                g = exp(-(uc*uc+vc*vc)/(2*sigma*sigma));
-                sum += g;
-                kernel[u][v] = g;
-            }
-        }
-        // Normalize it
-        for(int u=0; u<kernel.length; u++) {
-            for(int v=0; v<kernel[0].length; v++) {
-                kernel[u][v] /= sum;
-            }
-        }
+        kernel = new float[] {0.006, 0.061, 0.242, 0.383, 0.242, 0.061, 0.006};
     }
 
-    int width(PImage image) {
-        return image.width - kernel[0].length;
-    };
     int height(PImage image) {
-        return image.height - kernel.length;
+        return image.height - kernel.length + 1;
     };
 
-    void runWithStore(PImage image, PImage result) {
-        int w = kernel[0].length / 2;
+    int width(PImage image) {
+        return image.width - kernel.length + 1;
+    };
+
+    void runWithStore(PImage input, PImage store) {
+        int[] convoluted = new int[store.width * input.height];
         int h = kernel.length / 2;
-        for (int y = h; y < image.height - h; y++) {
-            for (int x = w; x < image.width - w; x++) {
+
+        for (int y = 0; y < input.height; y++) {
+            for (int x = h; x < input.width - h; x++) {
+                int ix = y*input.width + x;
                 float sum = 0;
-                for (int ky = 0; ky < kernel.length; ky++) {
-                    for (int kx = 0; kx < kernel[0].length; kx++) {
-                        sum += (image.pixels[(y - h + ky) * image.width + x - w + kx] & 0xff) * kernel[ky][kx];
-                    }
+                for (int i = 0; i < kernel.length; i++) {
+                    sum += (input.pixels[ix - h + i] & 0xff) * kernel[i];
                 }
-                result.pixels[(y - h) * result.width + x - w] = (int)sum;
+                convoluted[y*store.width + x - h] = (int)sum;
+            }
+        }
+
+        for (int y = h; y < input.height - h; y++) {
+            for (int x = 0; x < store.width; x++) {
+                int ix = y*store.width + x;
+                float sum = 0;
+                for (int i = 0; i < kernel.length; i++) {
+                    sum += (convoluted[ix - (h - i)*store.width] & 0xff) * kernel[i];
+                }
+                store.pixels[(y - h)*store.width + x] = (int)sum;
             }
         }
     }
 }
 
 class Edges extends ManagedFilter {
+    int height(PImage image) {
+        return image.height - 2;
+    };
+
+    int width(PImage image) {
+        return image.width - 2;
+    };
+
     void runWithStore(PImage image, PImage result) {
         int mn = Integer.MAX_VALUE, mx = Integer.MIN_VALUE;
 
+        // We could separate this but we don't bother
         for (int y = 1; y < image.height - 1; y++) {
             for (int x = 1; x < image.width - 1; x++) {
                 int ix = y * image.width + x;
@@ -154,15 +154,16 @@ class Edges extends ManagedFilter {
 
                 int dy = (t00 + 2*t01 + t02 - t20 - 2*t21 - t22) / 4;
                 int dx = (t00 + 2*t10 + t20 - t02 - 2*t12 - t22) / 4;
+
                 int v = (int)sqrt(dy * dy + dx * dx);
-                result.pixels[ix] = v;
+                result.pixels[(y - 1)*result.width + x - 1] = v;
                 mn = min(mn, v);
                 mx = max(mx, v);
             }
         }
 
         float d = mx - mn;
-        for (int i = 0; i < image.pixels.length; i++) {
+        for (int i = 0; i < result.pixels.length; i++) {
             result.pixels[i] = (int)(0xff * ((result.pixels[i] - mn) / d));
         }
     }
