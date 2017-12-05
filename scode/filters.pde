@@ -2,7 +2,7 @@
 class Binarize extends ManagedFilter {
     void runWithStore(PImage image, PImage result) {
         // 12 just works well
-        int k = min(image.width, image.height) / 12;
+        int k = min(image.width, image.height) / 3;
         // int k = 3;
         int[] summed = new int[image.height * image.width];
         summed[0] = image.pixels[0] & 0xff;
@@ -32,7 +32,8 @@ class Binarize extends ManagedFilter {
                 int t2 = summed[ix - kt*image.width + kr];
                 int t3 = summed[ix - kt*image.width - kl];
 
-                int avg = (t0 - t1 - t2 + t3) * 90 / 100;
+                //FIXME WTF?
+                int avg = (t0 - t1 - t2 + t3) * 900 / 100;
                 int bw = (image.pixels[ix] & 0xff) * window;
                 result.pixels[y * result.width + x] = bw >= avg ? 255 : 0;
             }
@@ -57,6 +58,7 @@ class Resize extends ManagedFilter {
     }
 
     int width(PImage image) {
+        // Hack, always shrinks image by 1px even at s=1.0
         return ceil(image.width * scale) - 1;
     }
     int height(PImage image) {
@@ -87,8 +89,19 @@ class Gaussian extends ManagedFilter {
     float[] kernel;
 
     Gaussian(float sigma) {
-        // Thanks https://patrickfuller.github.io/gaussian-blur-image-processing-for-scientists-and-engineers-part-4/
-        kernel = new float[] {0.006, 0.061, 0.242, 0.383, 0.242, 0.061, 0.006};
+        // Thanks patrickfuller.github.io/gaussian-blur-image-processing-for-scientists-and-engineers-part-4/
+        kernel = new float[ceil(sigma) * 6 + 1];
+        float sum = 0;
+
+        for(int i = 0; i < kernel.length; i++) {
+            float x = i - (kernel.length-1)/2;
+            float g = exp(-(x*x) / (2*sigma*sigma));
+            sum += g;
+            kernel[i] = g;
+        }
+        for(int i = 0; i < kernel.length; i++) {
+            kernel[i] /= sum;
+        }
     }
 
     int height(PImage image) {
@@ -127,7 +140,7 @@ class Gaussian extends ManagedFilter {
     }
 }
 
-class Edges extends ManagedFilter {
+class Edges extends Filter {
     int height(PImage image) {
         return image.height - 2;
     };
@@ -136,13 +149,17 @@ class Edges extends ManagedFilter {
         return image.width - 2;
     };
 
-    void runWithStore(PImage image, PImage result) {
-        int mn = Integer.MAX_VALUE, mx = Integer.MIN_VALUE;
+    // void runWithStore(PImage image, PImage result) {
+    PImage run(PImage image) {
+        PGraphics result = createGraphics(image.width - 2, image.height - 2);
+        result.beginDraw();
+        float[][] gradient = new float[2][height(image) * width(image)];
+        float[] mag = new float[height(image) * width(image)];
 
         // We could separate this but we don't bother
         for (int y = 1; y < image.height - 1; y++) {
             for (int x = 1; x < image.width - 1; x++) {
-                int ix = y * image.width + x;
+                int ix = y*image.width + x;
                 int t00 = image.pixels[ix - image.width - 1];
                 int t10 = image.pixels[ix - image.width];
                 int t20 = image.pixels[ix - image.width + 1];
@@ -152,20 +169,60 @@ class Edges extends ManagedFilter {
                 int t12 = image.pixels[ix + image.width];
                 int t22 = image.pixels[ix + image.width + 1];
 
-                int dy = (t00 + 2*t01 + t02 - t20 - 2*t21 - t22) / 4;
-                int dx = (t00 + 2*t10 + t20 - t02 - 2*t12 - t22) / 4;
+                float dy = (t00 + 2*t01 + t02 - t20 - 2*t21 - t22) / 4.0;
+                float dx = (t00 + 2*t10 + t20 - t02 - 2*t12 - t22) / 4.0;
 
-                int v = (int)sqrt(dy * dy + dx * dx);
-                result.pixels[(y - 1)*result.width + x - 1] = v;
-                mn = min(mn, v);
-                mx = max(mx, v);
+                int gix = (y - 1)*result.width + x - 1;
+                gradient[0][gix] = dy;
+                gradient[1][gix] = dx;
+                mag[gix] = sqrt(dy*dy + dx*dx);
             }
         }
 
-        float d = mx - mn;
-        for (int i = 0; i < result.pixels.length; i++) {
-            result.pixels[i] = (int)(0xff * ((result.pixels[i] - mn) / d));
+        final color[] COLORS = {#ff0000, #00ff00, #0000ff, #ffffff};
+        final int[][] DIRS = {{0, 1}, {-1, 1}, {1, 0}, {1, 1}};
+        int mn = 255, mx = 0;
+        for (int y = 1; y < result.height - 1; y++) {
+            for (int x = 1; x < result.width - 1; x++) {
+                int ix = y*result.width + x;
+                float t00 = mag[ix - result.width - 1];
+                float t10 = mag[ix - result.width];
+                float t20 = mag[ix - result.width + 1];
+                float t01 = mag[ix - 1];
+                float t11 = mag[ix];
+                float t21 = mag[ix + 1];
+                float t02 = mag[ix + result.width - 1];
+                float t12 = mag[ix + result.width];
+                float t22 = mag[ix + result.width + 1];
+
+                float t = atan2(gradient[0][ix], gradient[1][ix]);
+                int dir = (int)(((t + PI / 8) / PI * 4) + 4) % 4;
+                if ((dir == 2 && t01 < t11 && t11 > t21) ||
+                    (dir == 3 && t02 < t11 && t11 > t20) ||
+                    (dir == 0 && t10 < t11 && t11 > t12) ||
+                    (dir == 1 && t00 < t11 && t11 > t22)) {
+
+                    if (mag[ix] > 6 && x > 6 && x < result.width - 6 && y > 6 && y < result.height - 6) {
+                        result.stroke(COLORS[dir]);
+                        result.line(x, y, x + gradient[0][ix], y + gradient[1][ix]);
+                    }
+                    // if (mag[ix] > 1) {
+                    //     vectors.stroke(255);
+                    //     vectors.point(x, y);
+                    // }
+                        // result.pixels[ix] = mag[ix] > 6 ? COLORS[dir] : 0;
+                        // result.pixels[ix] = COLORS[dir];
+                }
+                mn = min(mn, (int)mag[ix]);
+                mx = max(mx, (int)mag[ix]);
+            }
         }
+        // float d = mx - mn;
+        // for (int i = 0; i < result.pixels.length; i++) {
+        //     result.pixels[i] = (int)((result.pixels[i] & 0xff) * 3.5);
+        // }
+        result.endDraw();
+        return result;
     }
 }
 

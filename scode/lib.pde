@@ -1,3 +1,12 @@
+void presentBw(PImage image) {
+    image.loadPixels();
+    for (int i = 0; i < image.pixels.length; i++) {
+        int c = image.pixels[i] & 0xff;
+        image.pixels[i] = c | (c << 8) | (c << 16) | (0xff << 24);
+    }
+    image.updatePixels();
+}
+
 abstract class Filter {
     abstract PImage run(PImage input);
 }

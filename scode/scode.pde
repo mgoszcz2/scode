@@ -10,8 +10,8 @@ boolean looping = true;
 int sampleCount = 0;
 boolean showHeaders = true;
 
-final int SIZE = 500;
-final int GRID_WIDTH = 1;
+final int SIZE = 300;
+final int GRID_WIDTH = 2;
 final int GRID_HEIGHT = 1;
 final int GRID_HEADER = 60;
 float[] mean = new float[GRID_WIDTH * GRID_HEIGHT];
@@ -80,6 +80,7 @@ PImage drawGrid(String desc, PImage img) {
 void setup() {
     size(0, 0);
     pixelDensity(displayDensity());
+    noSmooth();
     surface.setTitle("S*Code");
     if (args != null && args.length > 0) {
         staticImage = true;
@@ -94,7 +95,6 @@ void setup() {
 
 void draw() {
     gridPosition = 0;
-    clear();
 
     if (!staticImage) {
         if (!camera.available()) return;
@@ -112,9 +112,13 @@ void draw() {
     lastOperation = millis();
 
     PImage image = new Greyscale().run(frameImage);
-    image = new Resize(0.2).run(image);
+    clear();
+    image = new Resize(0.5).run(image);
+    // presentBw(image);
     image = new Gaussian(2.0).run(image);
+    drawGrid("Processed", image);
     image = new Edges().run(image);
+    // image = new Binarize().run(image);
     drawGrid("Done", image);
 
     while (gridPosition < GRID_WIDTH * GRID_HEIGHT) {
