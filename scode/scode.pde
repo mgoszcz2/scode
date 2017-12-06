@@ -12,7 +12,7 @@ boolean showHeaders = true;
 
 final int SIZE = 300;
 final int GRID_WIDTH = 2;
-final int GRID_HEIGHT = 1;
+final int GRID_HEIGHT = 2;
 final int GRID_HEADER = 60;
 float[] mean = new float[GRID_WIDTH * GRID_HEIGHT];
 
@@ -45,7 +45,7 @@ void keyPressed() {
     }
 }
 
-PImage drawGrid(String desc, PImage img) {
+Image drawGrid(String desc, Image img) {
     assert gridPosition < GRID_WIDTH * GRID_HEIGHT;
     float took = millis() - lastOperation;
     mean[gridPosition] = mean[gridPosition] * (sampleCount - 1) / sampleCount + took / sampleCount;
@@ -58,8 +58,11 @@ PImage drawGrid(String desc, PImage img) {
     noStroke();
 
     if (showHeaders) {
-        image(img, 0, GRID_HEADER, w, h - GRID_HEADER);
-        image(new Histogram(GRID_HEADER / 2 - 1).run(img), 0, 0, w, GRID_HEADER / 2);
+        image(img.get(), 0, GRID_HEADER, w, h - GRID_HEADER);
+        PImage hist = histogram(img, GRID_HEADER / 2 - 1);
+        if (hist != null) {
+            image(hist, 0, 0, w, GRID_HEADER / 2);
+        }
         fill(255);
         textSize(GRID_HEADER / 4);
         textAlign(LEFT, BOTTOM);
@@ -68,7 +71,7 @@ PImage drawGrid(String desc, PImage img) {
         textSize(GRID_HEADER / 10);
         text(String.format("%dx%d  %.0f/%.0f ms", img.width, img.height, took, mean[gridPosition]), w - 5, GRID_HEADER);
     } else {
-        image(img, 0, 0, w, h);
+        image(img.get(), 0, 0, w, h);
     }
 
     popMatrix();
@@ -111,14 +114,13 @@ void draw() {
     sampleCount++;
     lastOperation = millis();
 
-    PImage image = new Greyscale().run(frameImage);
+    Image image = grayscale(new Image(frameImage));
+    image = resize(image, 0.5);
+    Image blurred = gaussian(image, 2.0);
     clear();
-    image = new Resize(0.5).run(image);
-    // presentBw(image);
-    image = new Gaussian(2.0).run(image);
     drawGrid("Processed", image);
-    image = new Edges().run(image);
-    // image = new Binarize().run(image);
+    // drawGrid("Binarized", binarize(image, blurred));
+    image = edges(blurred);
     drawGrid("Done", image);
 
     while (gridPosition < GRID_WIDTH * GRID_HEIGHT) {
