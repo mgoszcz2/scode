@@ -13,8 +13,9 @@ class Image {
     Image(PImage input) {
         input.loadPixels();
         pixels = new int[input.width * input.height];
+        //FIXME: All of this breaks at high density
         arrayCopy(input.pixels, pixels);
-        kind = ImageKind.GRAYSCALE;
+        kind = ImageKind.COLOR;
         width = input.width;
         height = input.height;
     }
@@ -44,6 +45,9 @@ class Image {
 
     void ensureGrayscale() {
         assert kind == ImageKind.GRAYSCALE;
+    }
+    void ensureData() {
+        assert kind == ImageKind.DATA;
     }
 
     void normalizeData() {

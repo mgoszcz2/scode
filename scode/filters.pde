@@ -177,7 +177,68 @@ Image edges(Image image) {
     }
 
     mask.normalizeData();
-    return binarize(mask, mean(mask, 3));
+    mask = binarize(mask, mean(mask, 3));
+    for (int i = 0; i < mask.pixels.length; i++) {
+        if (mask.pixels[i] > 0) {
+            mask.pixels[i] = 1 + (int)((atan2(gradient[0][i], gradient[1][i]) + PI) * 180 / PI);
+        }
+    }
+    mask.kind = ImageKind.DATA;
+    return mask;
+}
+
+Image invert(Image input) {
+    input.ensureGrayscale();
+    Image result = new Image(input.width, input.height);
+    for (int i = 0; i < input.pixels.length; i++) {
+        result.pixels[i] = 0xff - input.pixels[i];
+    }
+    return result;
+}
+
+Image spokes(Image input) {
+    input.ensureData();
+    PGraphics graphic = createGraphics(input.width, input.height);
+    graphic.beginDraw();
+    graphic.stroke(255, 5);
+    int d = input.width / 12;
+    for (int y = 0; y < input.height; y++) {
+        for (int x = 0; x < input.width; x++) {
+            if (input.pixels[y*input.width + x] == 0) continue;
+            float a = ((input.pixels[y*input.width + x] - 1) * PI / 180) - PI - PI;
+            graphic.line(x, y, x + d*sin(a), y + d*cos(a));
+        }
+    }
+    graphic.endDraw();
+    return new Image(graphic);
+}
+
+Image hackySqrt(Image old, Image a, Image b) {
+    a = grayscale(a);
+    b = grayscale(a);
+    a.ensureGrayscale();
+    b.ensureGrayscale();
+
+    int mx = 0;
+    int mxi = 0;
+    for (int i = 0; i < a.pixels.length; i++) {
+        int u = a.pixels[i];
+        int v = b.pixels[i];
+        int r = (int)sqrt(u*u + v*v);
+        if (r > mx) {
+            mx = r;
+            mxi = i;
+        }
+    }
+
+    PGraphics graphic = createGraphics(a.width, a.height);
+    graphic.beginDraw();
+    graphic.set(0, 0, old.get());
+    graphic.stroke(#ff0000);
+    graphic.ellipseMode(CORNER);
+    graphic.ellipse(mxi % a.width, mxi / a.width, a.width / 20, a.width / 20);
+    graphic.endDraw();
+    return new Image(graphic);
 }
 
 void drawBin(PGraphics result, color cl, int[] bin, int height, int mb) {

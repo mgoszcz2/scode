@@ -45,7 +45,7 @@ void keyPressed() {
     }
 }
 
-Image drawGrid(String desc, Image img) {
+void drawGrid(String desc, Image img) {
     assert gridPosition < GRID_WIDTH * GRID_HEIGHT;
     float took = millis() - lastOperation;
     mean[gridPosition] = mean[gridPosition] * (sampleCount - 1) / sampleCount + took / sampleCount;
@@ -77,12 +77,11 @@ Image drawGrid(String desc, Image img) {
     popMatrix();
     lastOperation = millis();
     gridPosition++;
-    return img;
 }
 
 void setup() {
     size(0, 0);
-    pixelDensity(displayDensity());
+    // pixelDensity(displayDensity());
     noSmooth();
     surface.setTitle("S*Code");
     if (args != null && args.length > 0) {
@@ -115,13 +114,17 @@ void draw() {
     lastOperation = millis();
 
     Image image = grayscale(new Image(frameImage));
-    image = resize(image, 0.5);
+    image = resize(image, 0.3);
     Image blurred = gaussian(image, 2.0);
     clear();
     drawGrid("Processed", image);
     // drawGrid("Binarized", binarize(image, blurred));
-    image = edges(blurred);
-    drawGrid("Done", image);
+    Image edges = spokes(edges(blurred));
+    Image edgesInverted = spokes(edges(invert(blurred)));
+    drawGrid("Edges", edges);
+    drawGrid("Edges (inverted)", edgesInverted);
+    // drawGrid("Edge", edges);
+    drawGrid("Spoke combined", hackySqrt(image, edges, edgesInverted));
 
     while (gridPosition < GRID_WIDTH * GRID_HEIGHT) {
         int w = width / GRID_WIDTH;
