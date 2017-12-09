@@ -1,3 +1,5 @@
+import java.util.*;
+
 Image mean(Image image, int k) {
     image.ensureGrayscale();
     int[] summed = new int[image.height * image.width];
@@ -121,6 +123,43 @@ Image gaussian(Image input, float sigma) {
     return store;
 }
 
+Image circleDetect(Image input, boolean inverted) {
+    input.ensureData();
+    IntList[] angles = new IntList[181];
+    Image result = new Image(input.width, input.height, ImageKind.DATA);
+
+    for (int i = 0; i < input.pixels.length; i++) {
+        // Only accumate half the circle
+        if (input.pixels[i] > 0 && input.pixels[i] <= 181) {
+            int a = input.pixels[i] - 1;
+            if (angles[a] == null) {
+                angles[a] = new IntList();
+            }
+            angles[a].append(i);
+        }
+    }
+
+    for (int i = 0; i < input.pixels.length; i++) {
+        if (input.pixels[i] > 181) {
+            int a = (input.pixels[i] - 1) % 180;
+            if (angles[a] == null) continue;
+
+            int x0 = i % input.width;
+            int y0 = i / input.width;
+            for (int j : angles[a]) {
+                int x1 = j % input.width;
+                int y1 = j / input.width;
+                int mx = (x0 + x1)/2;
+                int my = (y0 + y1)/2;
+                int b = ((int)((atan2(mx - x0, my - y0) + PI) * 180 / PI) + (inverted ? 270 : 90)) % 360;
+                // println(a, b);
+                if (abs(a - b) < 3) result.pixels[my*input.width + mx]++;
+            }
+        }
+    }
+    return result;
+}
+
 // Should be blurred by this point
 Image edges(Image image) {
     image.ensureGrayscale();
@@ -180,7 +219,8 @@ Image edges(Image image) {
     mask = binarize(mask, mean(mask, 3));
     for (int i = 0; i < mask.pixels.length; i++) {
         if (mask.pixels[i] > 0) {
-            mask.pixels[i] = 1 + (int)((atan2(gradient[0][i], gradient[1][i]) + PI) * 180 / PI);
+            //FIXME: Not sure why +270 needed?
+            mask.pixels[i] = 1 + ((int)((atan2(gradient[0][i], gradient[1][i]) + PI) * 180 / PI) + 270) % 360;
         }
     }
     mask.kind = ImageKind.DATA;
@@ -194,51 +234,6 @@ Image invert(Image input) {
         result.pixels[i] = 0xff - input.pixels[i];
     }
     return result;
-}
-
-Image spokes(Image input) {
-    input.ensureData();
-    PGraphics graphic = createGraphics(input.width, input.height);
-    graphic.beginDraw();
-    graphic.stroke(255, 5);
-    int d = input.width / 12;
-    for (int y = 0; y < input.height; y++) {
-        for (int x = 0; x < input.width; x++) {
-            if (input.pixels[y*input.width + x] == 0) continue;
-            float a = ((input.pixels[y*input.width + x] - 1) * PI / 180) - PI - PI;
-            graphic.line(x, y, x + d*sin(a), y + d*cos(a));
-        }
-    }
-    graphic.endDraw();
-    return new Image(graphic);
-}
-
-Image hackySqrt(Image old, Image a, Image b) {
-    a = grayscale(a);
-    b = grayscale(a);
-    a.ensureGrayscale();
-    b.ensureGrayscale();
-
-    int mx = 0;
-    int mxi = 0;
-    for (int i = 0; i < a.pixels.length; i++) {
-        int u = a.pixels[i];
-        int v = b.pixels[i];
-        int r = (int)sqrt(u*u + v*v);
-        if (r > mx) {
-            mx = r;
-            mxi = i;
-        }
-    }
-
-    PGraphics graphic = createGraphics(a.width, a.height);
-    graphic.beginDraw();
-    graphic.set(0, 0, old.get());
-    graphic.stroke(#ff0000);
-    graphic.ellipseMode(CORNER);
-    graphic.ellipse(mxi % a.width, mxi / a.width, a.width / 20, a.width / 20);
-    graphic.endDraw();
-    return new Image(graphic);
 }
 
 void drawBin(PGraphics result, color cl, int[] bin, int height, int mb) {

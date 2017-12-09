@@ -116,15 +116,14 @@ void draw() {
     Image image = grayscale(new Image(frameImage));
     image = resize(image, 0.3);
     Image blurred = gaussian(image, 2.0);
+    // Image blurred = gaussian(image, 0.5);
     clear();
     drawGrid("Processed", image);
     // drawGrid("Binarized", binarize(image, blurred));
-    Image edges = spokes(edges(blurred));
-    Image edgesInverted = spokes(edges(invert(blurred)));
+    Image edges = edges(blurred);
     drawGrid("Edges", edges);
-    drawGrid("Edges (inverted)", edgesInverted);
-    // drawGrid("Edge", edges);
-    drawGrid("Spoke combined", hackySqrt(image, edges, edgesInverted));
+    drawGrid("Circles", circleDetect(edges, false));
+    drawGrid("Circles (inverted)", circleDetect(edges, true));
 
     while (gridPosition < GRID_WIDTH * GRID_HEIGHT) {
         int w = width / GRID_WIDTH;

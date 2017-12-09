@@ -38,8 +38,9 @@ class Image {
             mx = max(mx, input[i]);
             mn = min(mn, input[i]);
         }
+        int d = max(1, mx - mn);
         for (int i = 0; i < input.length; i++) {
-            input[i] = 0xff * (input[i] - mn) / (mx - mn);
+            input[i] = 0xff * (input[i] - mn) / d;
         }
     }
 
