@@ -4,6 +4,14 @@ enum ImageKind {
     DATA
 }
 
+class AuxImage {
+    Image main, aux;
+    AuxImage(Image main, Image aux) {
+        this.main = main;
+        this.aux = aux;
+    }
+}
+
 class Image {
     int[] pixels;
     int width;

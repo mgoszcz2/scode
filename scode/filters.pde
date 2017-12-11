@@ -38,13 +38,14 @@ Image mean(Image image, int k) {
 
     return result;
 }
+
 Image binarize(Image image, Image values) {
     image.ensureGrayscale();
     values.ensureGrayscale();
     assert image.width == values.width && image.height == values.height;
     Image result = new Image(image.width, image.height);
     for (int i = 0; i < image.pixels.length; i++) {
-        result.pixels[i] = image.pixels[i] > values.pixels[i] + 10 ? 255 : 0;
+        result.pixels[i] = image.pixels[i] > values.pixels[i] + 30 ? 255 : 0;
     }
     return result;
 }
@@ -123,10 +124,15 @@ Image gaussian(Image input, float sigma) {
     return store;
 }
 
-Image circleDetect(Image input, boolean inverted) {
+int angle(int x, int y) {
+    return ((int)((atan2(x, y) + PI) * 180 / PI) + 90) % 360;
+}
+
+AuxImage circleDetect(Image input, boolean inverted) {
     input.ensureData();
     IntList[] angles = new IntList[181];
     Image result = new Image(input.width, input.height, ImageKind.DATA);
+    PGraphics vis = createGraphics(input.width, input.height);
 
     for (int i = 0; i < input.pixels.length; i++) {
         // Only accumate half the circle
@@ -139,6 +145,9 @@ Image circleDetect(Image input, boolean inverted) {
         }
     }
 
+    vis.beginDraw();
+    vis.noStroke();
+    vis.image(input.get(), 0, 0);
     for (int i = 0; i < input.pixels.length; i++) {
         if (input.pixels[i] > 181) {
             int a = (input.pixels[i] - 1) % 180;
@@ -151,13 +160,62 @@ Image circleDetect(Image input, boolean inverted) {
                 int y1 = j / input.width;
                 int mx = (x0 + x1)/2;
                 int my = (y0 + y1)/2;
-                int b = ((int)((atan2(mx - x0, my - y0) + PI) * 180 / PI) + (inverted ? 270 : 90)) % 360;
-                // println(a, b);
-                if (abs(a - b) < 3) result.pixels[my*input.width + mx]++;
+                int b = (angle(mx - x0, my - y0) + (inverted ? 180 : 0)) % 360;
+                int c = (angle(x1 - x0, y1 - y0) + (inverted ? 180 : 0)) % 360;
+                float len = sqrt(pow(x1-x0,2)+pow(y1-y0, 2));
+                // println(a, b, c, abs(a - b) < 3, abs(b - c) < 10);
+                if (abs(a - b) < 5 && abs(b - c) < 7 && len < input.width / 5) {
+                    vis.fill(#ffffff, 50);
+                    vis.rect(mx, my, 1.5, 1.5);
+                    vis.stroke(255, 10);
+                    vis.line(x0, y0, x1, y1);
+                    result.pixels[my*input.width + mx]++;
+                    result.pixels[my*input.width + mx - 1]++;
+                    result.pixels[my*input.width + mx + 1]++;
+                    result.pixels[my*input.width + mx - input.width]++;
+                    result.pixels[my*input.width + mx + input.width]++;
+                }
             }
         }
     }
-    return result;
+
+    vis.endDraw();
+    return new AuxImage(result, new Image(vis));
+}
+
+Image hackySqrt(Image old, Image a, Image b) {
+    a = grayscale(a);
+    b = grayscale(a);
+    a.ensureGrayscale();
+    b.ensureGrayscale();
+
+    int mx = 0;
+    int mxi = 0;
+    for (int i = 0; i < a.pixels.length; i++) {
+        int u = a.pixels[i];
+        int v = b.pixels[i];
+        int r = (u*u)*(v*v);//sqrt(u*u + v*v);
+        if (r > mx) {
+            mx = r;
+            mxi = i;
+        }
+    }
+
+    PGraphics graphic = createGraphics(a.width, a.height);
+    graphic.beginDraw();
+    graphic.set(0, 0, old.get());
+    graphic.stroke(#ff0000);
+    graphic.noFill();
+    for (int i = 0; i < a.pixels.length; i++) {
+        int u = a.pixels[i];
+        int v = b.pixels[i];
+        int r = (u*u)*(v*v);//sqrt(u*u + v*v);
+        if (r > mx - 4 && mx > 0) {
+            graphic.ellipse(i % a.width, i / a.width, 5, 5);
+        }
+    }
+    graphic.endDraw();
+    return new Image(graphic);
 }
 
 // Should be blurred by this point
@@ -219,8 +277,7 @@ Image edges(Image image) {
     mask = binarize(mask, mean(mask, 3));
     for (int i = 0; i < mask.pixels.length; i++) {
         if (mask.pixels[i] > 0) {
-            //FIXME: Not sure why +270 needed?
-            mask.pixels[i] = 1 + ((int)((atan2(gradient[0][i], gradient[1][i]) + PI) * 180 / PI) + 270) % 360;
+            mask.pixels[i] = 1 + angle(gradient[0][i], gradient[1][i]);
         }
     }
     mask.kind = ImageKind.DATA;

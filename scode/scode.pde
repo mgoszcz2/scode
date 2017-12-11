@@ -114,16 +114,19 @@ void draw() {
     lastOperation = millis();
 
     Image image = grayscale(new Image(frameImage));
-    image = resize(image, 0.3);
-    Image blurred = gaussian(image, 2.0);
-    // Image blurred = gaussian(image, 0.5);
+    image = resize(image, 0.5);
+    Image blurred = gaussian(image, 1.5);
+    // Image blurred = image;
     clear();
-    drawGrid("Processed", image);
+    // drawGrid("Processed", blurred);
     // drawGrid("Binarized", binarize(image, blurred));
     Image edges = edges(blurred);
     drawGrid("Edges", edges);
-    drawGrid("Circles", circleDetect(edges, false));
-    drawGrid("Circles (inverted)", circleDetect(edges, true));
+    AuxImage circles = circleDetect(edges, false);
+    AuxImage circlesI = circleDetect(edges, true);
+    drawGrid("Circles", circles.aux);
+    drawGrid("Circles (inverted)", circlesI.aux);
+    drawGrid("Combined", hackySqrt(image, circles.main, circlesI.main));
 
     while (gridPosition < GRID_WIDTH * GRID_HEIGHT) {
         int w = width / GRID_WIDTH;
