@@ -10,8 +10,8 @@ boolean looping = true;
 int sampleCount = 0;
 boolean showHeaders = true;
 
-final int SIZE = 300;
-final int GRID_WIDTH = 2;
+final int SIZE = 200;
+final int GRID_WIDTH = 3;
 final int GRID_HEIGHT = 2;
 final int GRID_HEADER = 60;
 float[] mean = new float[GRID_WIDTH * GRID_HEIGHT];
@@ -58,7 +58,7 @@ void drawGrid(String desc, Image img) {
     noStroke();
 
     if (showHeaders) {
-        image(img.get(), 0, GRID_HEADER, w, h - GRID_HEADER);
+        image(img.get(this), 0, GRID_HEADER, w, h - GRID_HEADER);
         PImage hist = histogram(img, GRID_HEADER / 2 - 1);
         if (hist != null) {
             image(hist, 0, 0, w, GRID_HEADER / 2);
@@ -71,7 +71,7 @@ void drawGrid(String desc, Image img) {
         textSize(GRID_HEADER / 10);
         text(String.format("%dx%d  %.0f/%.0f ms", img.width, img.height, took, mean[gridPosition]), w - 5, GRID_HEADER);
     } else {
-        image(img.get(), 0, 0, w, h);
+        image(img.get(this), 0, 0, w, h);
     }
 
     popMatrix();
@@ -81,7 +81,7 @@ void drawGrid(String desc, Image img) {
 
 void setup() {
     size(0, 0);
-    // pixelDensity(displayDensity());
+    pixelDensity(displayDensity());
     noSmooth();
     surface.setTitle("S*Code");
     if (args != null && args.length > 0) {
@@ -113,20 +113,20 @@ void draw() {
     sampleCount++;
     lastOperation = millis();
 
-    Image image = grayscale(new Image(frameImage));
-    image = resize(image, 0.5);
-    Image blurred = gaussian(image, 1.5);
-    // Image blurred = image;
     clear();
-    // drawGrid("Processed", blurred);
-    // drawGrid("Binarized", binarize(image, blurred));
-    Image edges = edges(blurred);
-    drawGrid("Edges", edges);
-    AuxImage circles = circleDetect(edges, false);
-    AuxImage circlesI = circleDetect(edges, true);
-    drawGrid("Circles", circles.aux);
-    drawGrid("Circles (inverted)", circlesI.aux);
-    drawGrid("Combined", hackySqrt(image, circles.main, circlesI.main));
+    Image orignal = new Image(frameImage);
+    drawGrid("Original", orignal);
+    orignal.grayscale();
+    Image resized = gaussian(resize(orignal, 0.8), 1.0);
+    drawGrid("Processed", resized);
+    Image blurred = mean(resized, (int)(resized.width * 0.05));
+    drawGrid("Blurred", blurred);
+    Image binary = binarize(resized, blurred, -7);
+    drawGrid("Binarized", binary);
+    Image finder = findFinder(binary);
+    drawGrid("Finder", finder);
+    Image components = components(morph(morph(morph(finder, true), false), false));
+    drawGrid("Localised", combine(resized, morph(morph(findAuxFinder(binary, components), false), false), false));
 
     while (gridPosition < GRID_WIDTH * GRID_HEIGHT) {
         int w = width / GRID_WIDTH;

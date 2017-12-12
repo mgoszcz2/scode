@@ -1,9 +1,9 @@
 import java.util.*;
 
-Image mean(Image image, int k) {
+static Image mean(Image image, int k) {
     image.ensureGrayscale();
     int[] summed = new int[image.height * image.width];
-    Image result = new Image(image.width, image.height);
+    Image result = Image.withSize(image);
 
     summed[0] = image.pixels[0] & 0xff;
     for (int x = 1; x < image.width; x++) {
@@ -39,27 +39,141 @@ Image mean(Image image, int k) {
     return result;
 }
 
-Image binarize(Image image, Image values) {
+// Negtaive nudge makes more white
+static Image binarize(Image image, Image values, int nudge) {
     image.ensureGrayscale();
     values.ensureGrayscale();
-    assert image.width == values.width && image.height == values.height;
-    Image result = new Image(image.width, image.height);
+    assert image.equalSize(values);
+    Image result = Image.withSize(image);
     for (int i = 0; i < image.pixels.length; i++) {
-        result.pixels[i] = image.pixels[i] > values.pixels[i] + 30 ? 255 : 0;
+        result.pixels[i] = image.pixels[i] > values.pixels[i] + nudge ? 255 : 0;
+    }
+    result.kind = ImageKind.BINARY;
+    return result;
+}
+
+static private boolean approxEqual(RingBuffer ring, float[] ratios, float error) {
+    if (ring.items < ring.buffer.length) return false;
+    float gap = ring.buffer[1].hypot(ring.buffer[0]);
+
+    for (int i = 1; i < ring.buffer.length - 2; i++) {
+        float mgap = ring.buffer[i + 1].hypot(ring.buffer[i]);
+        if (Math.abs(ratios[i - 1] - mgap / gap) > error) return false;
+    }
+
+    return true;
+}
+
+static private void lineCheck(Image result, Image input, float[] ratios, float error, int x0, int y0, int x1, int y1) {
+    input.ensureGrayscale();
+    result.ensureGrayscale();
+    RingBuffer ring = new RingBuffer(ratios.length + 2);
+    int lastVal = input.pixels[y0*input.width + x0];
+
+    int dx = abs(x1 - x0);
+    int dy = abs(y1 - y0);
+    int sx = x0 < x1 ? 1 : -1;
+    int sy = y0 < y1 ? 1 : -1;
+    float err = (dx > dy ? dx : -dy) / 2.0;
+
+    for (;;) {
+        if (input.invalid(x0, y0) || (x0 == x1 && y0 == y1)) break;
+        int val = input.pixels[y0*input.width + x0];
+        if (val != lastVal) {
+            ring.push(new Position(x0, y0));
+            lastVal = val;
+            if (val > 0 && approxEqual(ring, ratios, error)) {
+                result.line(255, ring.buffer[0].x, ring.buffer[0].y, ring.buffer[ring.buffer.length-1].x, ring.buffer[ring.buffer.length-1].y);
+            }
+        }
+
+        float e2 = err;
+        if (e2 > -dx) {
+            err -= dy;
+            x0 += sx;
+        }
+        if (e2 < dy) {
+            err += dx;
+            y0 += sy;
+        }
+    }
+}
+
+static Image findFinder(Image input) {
+    input.ensureBinary();
+    final float[] ratios = {0.63, 1.82, 0.63, 1.00};
+
+    Image rx = Image.withSize(input, ImageKind.BINARY);
+    Image ry = Image.withSize(input, ImageKind.BINARY);
+
+    for (int y = 0; y < input.height; y++) {
+        lineCheck(rx, input, ratios, 0.35, 0, y, input.width, y);
+    }
+    for (int x = 0; x < input.width; x++) {
+        lineCheck(ry, input, ratios, 0.35, x, 0, x, input.height);
+    }
+    return combine(rx, ry, true);
+}
+
+static Image findAuxFinder(Image input, Image components) {
+    // final float[] ratios = {1.00, 1.00, 1.00, 1.00, 1.00};
+    final float[] ratios = {1.00, 1.00, 1.00, 1.00, 0.80, 0.45, 0.50, 0.45};
+    input.ensureBinary();
+    components.ensureBinary();
+    assert input.equalSize(components);
+
+    int d = input.width * 3 / 4;
+    Image result = Image.withSize(input, ImageKind.BINARY);
+
+    for (int y = 0; y < input.height; y++) {
+        for (int x = 0; x < input.width; x++) {
+            if (components.pixels[y*input.width + x] > 0) {
+                result.pixels[y*input.width + x] = 255;
+                result.pixels[y*input.width + x + 1] = 255;
+                result.pixels[y*input.width + x - 1] = 255;
+                result.pixels[y*input.width + x + input.width] = 255;
+                result.pixels[y*input.width + x - input.width] = 255;
+                for (int i = 0; i < 720; i++) {
+                    // result.line(255, x, y, (int)(x + d * cos(i*PI/360)), (int)(y + d * sin(i*PI/360)));
+                    lineCheck(result, input, ratios, 0.35, x, y, (int)(x + d * cos(i*PI/360)), (int)(y + d * sin(i*PI/360)));
+                }
+            }
+        }
     }
     return result;
 }
 
-Image grayscale(Image image) {
-    Image result = new Image(image.width, image.height);
-    for (int i = 0; i < image.pixels.length; i++) {
-        color c = image.pixels[i];
-        result.pixels[i] = ((c & 0xff) + ((c >> 8) & 0xff) + ((c >> 16) & 0xff)) / 3;
+private static void flood(boolean[] result, Image input, int x, int y) {
+    int ix = y*input.width + x;
+    if (input.invalid(x, y) || result[ix] || input.pixels[ix] == 0) {
+        return;
+    }
+    result[y*input.width + x] = true;
+    flood(result, input, x + 1, y);
+    flood(result, input, x - 1, y);
+    flood(result, input, x, y + 1);
+    flood(result, input, x, y - 1);
+}
+
+static Image components(Image input) {
+    input.ensureGrayscale();
+    Image result = Image.withSize(input, ImageKind.BINARY);
+    boolean[] store = new boolean[input.width * input.height];
+    int component = 1;
+
+    for (int y = 0; y < input.height; y++) {
+        for (int x = 0; x < input.width; x++) {
+            int ix = y*input.width + x;
+            if (!store[ix] && input.pixels[ix] > 0) {
+                flood(store, input, x, y);
+                result.pixels[ix] = 255;
+            }
+        }
     }
     return result;
 }
 
-Image resize(Image image, float scale) {
+static Image resize(Image image, float scale) {
     image.ensureGrayscale();
     // Hack, always shrinks image by 1px even at s=1.0
     Image result = new Image(ceil(image.width * scale) - 1, ceil(image.height * scale) - 1);
@@ -82,7 +196,18 @@ Image resize(Image image, float scale) {
     return result;
 }
 
-Image gaussian(Image input, float sigma) {
+static Image evenCrop(Image input, int width, int height) {
+    Image result = new Image(width, height);
+    int d = (input.width - width)/2 + ((input.height - height)/2)*input.width;
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            result.pixels[y*width + x] = input.pixels[y*input.width + x + d];
+        }
+    }
+    return result;
+}
+
+static Image gaussian(Image input, float sigma) {
     input.ensureGrayscale();
     float[] kernel = new float[ceil(sigma) * 6 + 1];
     Image store = new Image(input.width - kernel.length + 1, input.height - kernel.length + 1);
@@ -124,102 +249,33 @@ Image gaussian(Image input, float sigma) {
     return store;
 }
 
-int angle(int x, int y) {
+static int angle(int x, int y) {
     return ((int)((atan2(x, y) + PI) * 180 / PI) + 90) % 360;
 }
 
-AuxImage circleDetect(Image input, boolean inverted) {
-    input.ensureData();
-    IntList[] angles = new IntList[181];
-    Image result = new Image(input.width, input.height, ImageKind.DATA);
-    PGraphics vis = createGraphics(input.width, input.height);
-
-    for (int i = 0; i < input.pixels.length; i++) {
-        // Only accumate half the circle
-        if (input.pixels[i] > 0 && input.pixels[i] <= 181) {
-            int a = input.pixels[i] - 1;
-            if (angles[a] == null) {
-                angles[a] = new IntList();
-            }
-            angles[a].append(i);
-        }
-    }
-
-    vis.beginDraw();
-    vis.noStroke();
-    vis.image(input.get(), 0, 0);
-    for (int i = 0; i < input.pixels.length; i++) {
-        if (input.pixels[i] > 181) {
-            int a = (input.pixels[i] - 1) % 180;
-            if (angles[a] == null) continue;
-
-            int x0 = i % input.width;
-            int y0 = i / input.width;
-            for (int j : angles[a]) {
-                int x1 = j % input.width;
-                int y1 = j / input.width;
-                int mx = (x0 + x1)/2;
-                int my = (y0 + y1)/2;
-                int b = (angle(mx - x0, my - y0) + (inverted ? 180 : 0)) % 360;
-                int c = (angle(x1 - x0, y1 - y0) + (inverted ? 180 : 0)) % 360;
-                float len = sqrt(pow(x1-x0,2)+pow(y1-y0, 2));
-                // println(a, b, c, abs(a - b) < 3, abs(b - c) < 10);
-                if (abs(a - b) < 5 && abs(b - c) < 7 && len < input.width / 5) {
-                    vis.fill(#ffffff, 50);
-                    vis.rect(mx, my, 1.5, 1.5);
-                    vis.stroke(255, 10);
-                    vis.line(x0, y0, x1, y1);
-                    result.pixels[my*input.width + mx]++;
-                    result.pixels[my*input.width + mx - 1]++;
-                    result.pixels[my*input.width + mx + 1]++;
-                    result.pixels[my*input.width + mx - input.width]++;
-                    result.pixels[my*input.width + mx + input.width]++;
-                }
+// all means erode
+static Image morph(Image input, boolean allMode) {
+    input.ensureBinary();
+    Image result = Image.withSize(input, ImageKind.BINARY);
+    for (int y = 1; y < input.height - 1; y++) {
+        for (int x = 1; x < input.width - 1; x++) {
+            int ix = y*input.width + x;
+            boolean t0 = input.pixels[ix - input.width] > 0;
+            boolean t1 = input.pixels[ix - 1] > 0;
+            boolean t2 = input.pixels[ix + 1] > 0;
+            boolean t3 = input.pixels[ix + input.width] > 0;
+            if (allMode) {
+                result.pixels[ix] = t0 && t1 && t2 && t3 ? 255 : 0;
+            } else {
+                result.pixels[ix] = t0 || t1 || t2 || t3 ? 255 : 0;
             }
         }
     }
-
-    vis.endDraw();
-    return new AuxImage(result, new Image(vis));
-}
-
-Image hackySqrt(Image old, Image a, Image b) {
-    a = grayscale(a);
-    b = grayscale(a);
-    a.ensureGrayscale();
-    b.ensureGrayscale();
-
-    int mx = 0;
-    int mxi = 0;
-    for (int i = 0; i < a.pixels.length; i++) {
-        int u = a.pixels[i];
-        int v = b.pixels[i];
-        int r = (u*u)*(v*v);//sqrt(u*u + v*v);
-        if (r > mx) {
-            mx = r;
-            mxi = i;
-        }
-    }
-
-    PGraphics graphic = createGraphics(a.width, a.height);
-    graphic.beginDraw();
-    graphic.set(0, 0, old.get());
-    graphic.stroke(#ff0000);
-    graphic.noFill();
-    for (int i = 0; i < a.pixels.length; i++) {
-        int u = a.pixels[i];
-        int v = b.pixels[i];
-        int r = (u*u)*(v*v);//sqrt(u*u + v*v);
-        if (r > mx - 4 && mx > 0) {
-            graphic.ellipse(i % a.width, i / a.width, 5, 5);
-        }
-    }
-    graphic.endDraw();
-    return new Image(graphic);
+    return result;
 }
 
 // Should be blurred by this point
-Image edges(Image image) {
+static Image edges(Image image) {
     image.ensureGrayscale();
     Image mask = new Image(image.width - 2, image.height - 2, ImageKind.DATA);
     int[][] gradient = new int[2][mask.height * mask.width];
@@ -273,8 +329,8 @@ Image edges(Image image) {
         }
     }
 
-    mask.normalizeData();
-    mask = binarize(mask, mean(mask, 3));
+    mask.grayscale();
+    mask = binarize(mask, mean(mask, 3), 5);
     for (int i = 0; i < mask.pixels.length; i++) {
         if (mask.pixels[i] > 0) {
             mask.pixels[i] = 1 + angle(gradient[0][i], gradient[1][i]);
@@ -284,16 +340,16 @@ Image edges(Image image) {
     return mask;
 }
 
-Image invert(Image input) {
-    input.ensureGrayscale();
-    Image result = new Image(input.width, input.height);
-    for (int i = 0; i < input.pixels.length; i++) {
-        result.pixels[i] = 0xff - input.pixels[i];
+static Image combine(Image a, Image b, boolean both) {
+    assert a.equalSize(b) && a.compatible(b);
+    Image result = new Image(a.width, a.height, a.kind);
+    for (int i = 0; i < a.pixels.length; i++) {
+        result.pixels[i] = both ? a.pixels[i] & b.pixels[i] : a.pixels[i] | b.pixels[i];
     }
     return result;
 }
 
-void drawBin(PGraphics result, color cl, int[] bin, int height, int mb) {
+static void drawBin(PGraphics result, color cl, int[] bin, int height, int mb) {
     result.beginShape();
     result.stroke(cl);
     result.fill(cl, 128);
