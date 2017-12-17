@@ -3,23 +3,12 @@ import processing.video.*;
 Capture camera;
 boolean frameResized;
 PImage frameImage;
-int gridPosition;
-int lastOperation = 0;
 boolean staticImage = false;
 boolean looping = true;
-int sampleCount = 0;
-boolean showHeaders = true;
-
-final int SIZE = 300;
-final int GRID_WIDTH = 2;
-final int GRID_HEIGHT = 2;
-final int GRID_HEADER = 60;
-float[] mean = new float[GRID_WIDTH * GRID_HEIGHT];
+DebugData debugData = new DebugData();
 
 void resize() {
-    int w = (int)(frameImage.width * ((float)SIZE / frameImage.height) * GRID_WIDTH);
-    int h = showHeaders ? (GRID_HEADER + SIZE) * GRID_HEIGHT : SIZE * GRID_HEIGHT;
-    surface.setSize(w, h);
+    debugData.resize();
     frameResized = true;
 }
 
@@ -40,44 +29,9 @@ void keyPressed() {
         }
 
     } else if (key == 19) { // C-s
-        showHeaders = !showHeaders;
+        debugData.showHeaders = !debugData.showHeaders;
         resize();
     }
-}
-
-Image drawGrid(String desc, Image img) {
-    assert gridPosition < GRID_WIDTH * GRID_HEIGHT;
-    float took = millis() - lastOperation;
-    mean[gridPosition] = mean[gridPosition] * (sampleCount - 1) / sampleCount + took / sampleCount;
-
-    int w = width / GRID_WIDTH;
-    int h = height / GRID_HEIGHT;
-
-    pushMatrix();
-    translate(w * (gridPosition % GRID_WIDTH), h * (gridPosition / GRID_WIDTH));
-    noStroke();
-
-    if (showHeaders) {
-        image(img.get(this), 0, GRID_HEADER, w, h - GRID_HEADER);
-        PImage hist = histogram(img, GRID_HEADER / 2 - 1);
-        if (hist != null) {
-            image(hist, 0, 0, w, GRID_HEADER / 2);
-        }
-        fill(255);
-        textSize(GRID_HEADER / 4);
-        textAlign(LEFT, BOTTOM);
-        text(desc, 5, GRID_HEADER);
-        textAlign(RIGHT, BOTTOM);
-        textSize(GRID_HEADER / 10);
-        text(String.format("%dx%d  %.0f/%.0f ms", img.width, img.height, took, mean[gridPosition]), w - 5, GRID_HEADER);
-    } else {
-        image(img.get(this), 0, 0, w, h);
-    }
-
-    popMatrix();
-    lastOperation = millis();
-    gridPosition++;
-    return img;
 }
 
 void setup() {
@@ -97,8 +51,6 @@ void setup() {
 }
 
 void draw() {
-    gridPosition = 0;
-
     if (!staticImage) {
         if (!camera.available()) return;
         camera.read();
@@ -111,32 +63,20 @@ void draw() {
         frameImage = camera;
     }
 
-    sampleCount++;
-    lastOperation = millis();
+    DebugData.Drawer drawer = debugData.new Drawer(this);
+    drawer.begin();
 
-    clear();
     Image orignal = new Image(frameImage);
-    drawGrid("Original", orignal);
-
+    drawer.draw("Original", orignal);
     orignal.grayscale();
     Image resized = gaussian(resize(orignal, 0.8), 1.0);
-    drawGrid("Processed", resized);
-
+    drawer.draw("Processed", resized);
     Image blurred = mean(resized, (int)(resized.width * 0.04));
     Image binary = binarize(resized, blurred, 0.8);
-    drawGrid("Binarized", binary);
+    drawer.draw("Binarized", binary);
+    DecoderData decoded = decodeCode(resized, binary);
+    drawer.draw("Outline", binary);
 
-    Tuple<Image, String> decoded = drawOutline(resized, binary);
-    drawGrid("Outline", decoded.a);
-    if (decoded.b != null) println(decoded.b);
-
-    while (gridPosition < GRID_WIDTH * GRID_HEIGHT) {
-        int w = width / GRID_WIDTH;
-        int h = height / GRID_HEIGHT;
-        textAlign(CENTER, CENTER);
-        text("No image", w * (0.5 + gridPosition % GRID_WIDTH), h * (0.5 + gridPosition / GRID_WIDTH));
-        gridPosition++;
-    }
-
+    drawer.end();
     if (staticImage) noLoop();
 }

@@ -64,10 +64,10 @@ private static void flood(boolean[] result, Image input, int x, int y) {
     flood(result, input, x, y - 1);
 }
 
-static Position[] components(Image bg, Image input) {
+static Point[] components(Image bg, Image input) {
     input.ensureGrayscale();
     boolean[] store = new boolean[input.width * input.height];
-    Position[] result = new Position[4];
+    Point[] result = new Point[4];
     int component = 0;
 
     for (int y = 0; y < input.height; y++) {
@@ -76,7 +76,7 @@ static Position[] components(Image bg, Image input) {
             if (!store[ix] && input.pixels[ix] > 0) {
                 flood(store, input, x, y);
                 if (component >= 4) return null;
-                result[component++] = new Position(x, y);
+                result[component++] = new Point(x, y);
             }
         }
     }

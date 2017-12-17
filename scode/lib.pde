@@ -7,27 +7,27 @@ static enum ImageKind {
     DATA
 }
 
-static class Position {
+static class Point {
     final int x, y;
-    Position(int x, int y) {
+    Point(int x, int y) {
         this.x = x;
         this.y = y;
     }
 
-    float hypot(Position h) {
+    float hypot(Point h) {
         return (float)Math.hypot(h.x - x, h.y - y);
     }
 
-    Position add(int dx, int dy) {
-        return new Position(x + dx, y + dy);
+    Point add(int dx, int dy) {
+        return new Point(x + dx, y + dy);
     }
 
-    Position subtract(Position h) {
-        return new Position(x - h.x, y + h.y);
+    Point subtract(Point h) {
+        return new Point(x - h.x, y + h.y);
     }
 
-    Position midpoint(Position h) {
-        return new Position((x + h.x)/2, (y + h.y)/2);
+    Point midpoint(Point h) {
+        return new Point((x + h.x)/2, (y + h.y)/2);
     }
 
     double atan2() {
@@ -39,8 +39,8 @@ static class Position {
     }
 
     boolean equals(Object h) {
-        if (h == null || !(h instanceof Position)) return false;
-        Position hp = (Position)h;
+        if (h == null || !(h instanceof Point)) return false;
+        Point hp = (Point)h;
         return hp.x == x && hp.y == y;
     }
 
@@ -48,21 +48,21 @@ static class Position {
         return x << 16 | y & 0xffff;
     }
 
-    static Position mean(Position[] hs) {
+    static Point mean(Point[] hs) {
         int sx = 0, sy = 0;
-        for (Position p : hs) {
+        for (Point p : hs) {
             sx += p.x;
             sy += p.y;
         }
-        return new Position(sx / hs.length, sy / hs.length);
+        return new Point(sx / hs.length, sy / hs.length);
     }
 }
 
-static class Line implements Iterable<Position> {
+static class Line implements Iterable<Point> {
     final int width, height;
-    final Position start, end;
+    final Point start, end;
 
-    class LineIterator implements Iterator<Position> {
+    class LineIterator implements Iterator<Point> {
         private final int dx, dy, sx, sy;
         private int x0 = start.x, y0 = start.y;
         private boolean finished = false;
@@ -76,13 +76,13 @@ static class Line implements Iterable<Position> {
             error = (dx > dy ? dx : -dy) / 2.0;
         }
 
-        Position next() {
+        Point next() {
             if (finished || invalid()) {
                 finished = true;
                 throw new NoSuchElementException();
             }
 
-            Position r = new Position(x0, y0);
+            Point r = new Point(x0, y0);
             if (x0 == end.x && y0 == end.y) {
                 finished = true;
                 return r;
@@ -110,14 +110,14 @@ static class Line implements Iterable<Position> {
         }
     }
 
-    Line(Position start, Position end, int width, int height) {
+    Line(Point start, Point end, int width, int height) {
         this.start = start;
         this.end = end;
         this.width = width;
         this.height = height;
     }
 
-    Line(Position start, Position end) {
+    Line(Point start, Point end) {
         this(start, end, Integer.MAX_VALUE, Integer.MAX_VALUE);
     }
 
@@ -125,19 +125,19 @@ static class Line implements Iterable<Position> {
         return new LineIterator();
     }
 
-    float ratio(Position h) {
+    float ratio(Point h) {
         if (start.x != end.x) {
             return (h.x - start.x) / (float)(end.x - start.x);
         }
         return (h.y - start.y) / (float)(end.y - start.y);
     }
 
-    Position atRatio(float r) {
-        return new Position((int)(start.x + (end.x - start.x)*r), (int)(start.y + (end.y - start.y)*r));
+    Point atRatio(float r) {
+        return new Point((int)(start.x + (end.x - start.x)*r), (int)(start.y + (end.y - start.y)*r));
     }
 
     // Ripped stackoverflow.com/questions/563198
-    Position intersection(Line h) {
+    Point intersection(Line h) {
         float p0_x = start.x, p0_y = start.y;
         float p1_x = end.x, p1_y = end.y;
         float p2_x = h.start.x, p2_y = h.start.y;
@@ -152,7 +152,7 @@ static class Line implements Iterable<Position> {
         float t = ( s2_x * (p0_y - p2_y) - s2_y * (p0_x - p2_x)) / (-s2_x * s1_y + s1_x * s2_y);
 
         if (s >= 0 && s <= 1 && t >= 0 && t <= 1) {
-            return new Position((int)(p0_x + (t * s1_x)), (int)(p0_y + (t * s1_y)));
+            return new Point((int)(p0_x + (t * s1_x)), (int)(p0_y + (t * s1_y)));
         }
 
         return null;
@@ -177,7 +177,7 @@ static <T> void ringPush(T[] buf, T item) {
 }
 
 // buffer.length + 2 == ratios.length, not checked
-static boolean approxEqual(float[] ratios, Position[] buffer) {
+static boolean approxEqual(float[] ratios, Point[] buffer) {
     final float error = 0.50;
     float gap = buffer[1].hypot(buffer[0]);
 
@@ -253,7 +253,7 @@ static class Image {
         return pixels[y*width + x];
     }
 
-    int at(Position pos) {
+    int at(Point pos) {
         return pixels[pos.y*width + pos.x];
     }
 
@@ -261,7 +261,7 @@ static class Image {
         pixels[y*width + x] = val;
     }
 
-    void setAt(int val, Position pos) {
+    void setAt(int val, Point pos) {
         pixels[pos.y*width + pos.x] = val;
     }
 
@@ -278,29 +278,29 @@ static class Image {
         }
     }
 
-    void drawCross(int val, Position pos, int k) {
+    void drawCross(int val, Point pos, int k) {
         drawLine(val, pos.add(-k, -k), pos.add(k, k));
         drawLine(val, pos.add(-k, -k + 1), pos.add(k, k + 1));
         drawLine(val, pos.add(-k, k), pos.add(k, -k));
         drawLine(val, pos.add(-k, k + 1), pos.add(k, -k + 1));
     }
 
-    Line line(Position start, Position end) {
+    Line line(Point start, Point end) {
         return new Line(start, end, width, height);
     }
 
     void drawLine(int val, Line line) {
-        for (Position p : line) {
+        for (Point p : line) {
             pixels[p.y*width + p.x] = val;
         }
     }
 
-    void drawLine(int val, Position start, Position end) {
+    void drawLine(int val, Point start, Point end) {
         drawLine(val, line(start, end));
     }
 
     void drawLine(int val, int x0, int y0, int x1, int y1) {
-        drawLine(val, line(new Position(x0, y0), new Position(x1, y1)));
+        drawLine(val, line(new Point(x0, y0), new Point(x1, y1)));
     }
 
     private void fullColorArray(int[] input) {
