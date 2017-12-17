@@ -127,7 +127,9 @@ void draw() {
     drawGrid("Binarized", binary);
 
     Position[] positions = scanFinder(binary);
-    drawGrid("Outline", drawOutline(resized, binary, positions));
+    Tuple<Image, String> decoded = drawOutline(resized, binary, positions);
+    drawGrid("Outline", decoded.a);
+    if (decoded.b != null) println(decoded.b);
 
     while (gridPosition < GRID_WIDTH * GRID_HEIGHT) {
         int w = width / GRID_WIDTH;

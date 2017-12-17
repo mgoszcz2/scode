@@ -135,24 +135,83 @@ private static void orderCorners(Position[] positions) {
     });
 }
 
-static Image drawOutline(Image bg, Image input, Position[] positions) {
+private static int evenParity(int x) {
+    x ^= x >> 4;
+    x ^= x >> 2;
+    x ^= x >> 1;
+    return (~x) & 1;
+}
+
+private static String decodeBytes(int[] bytes) {
+    final int lfsrTap = 0x7ae;
+    String r = "";
+
+    if (bytes[bytes.length - 1] != 1) {
+        return "Not version 1";
+    }
+
+    int lfsr = 1;
+    for (int i = 0; i < bytes.length - 1; i++) {
+        int b = bytes[i] ^ lfsr;
+        if (evenParity(b & 0xff) != ((b >> 8) & 1)) {
+            return "Wrong parity";
+        }
+
+        r += (char)(b & 0xff);
+        boolean lb = (lfsr & 1) == 1;
+        lfsr >>= 1;
+        if (lb) lfsr ^= lfsrTap;
+    }
+
+    return r;
+}
+
+static Tuple<Image, String> drawOutline(Image bg, Image input, Position[] positions) {
     input.ensureBinary();
     Image result = new Image(bg, ImageKind.COLOR);
-    if (positions != null) {
-        final int[] colors = {#ff0000, #00ff00, #0000ff, #ff00ff};
-        orderCorners(positions);
-        for (int i = 0; i < positions.length; i++) {
-            result.drawCross(colors[i], positions[i], 30);
-        }
-        ArrayList<Position> right = timingDots(input, positions[0], positions[1]);
-        result.drawLine(#00ffff, positions[1], positions[2]);
-        ArrayList<Position> left = timingDots(input, positions[3], positions[2]);
-        result.drawLine(#00ffff, positions[3], positions[0]);
-        for (int i = 0; i < min(left.size(), right.size()); i++) {
-            result.drawLine(#3300cc, left.get(i), right.get(i));
+    if (positions == null) {
+        return new Tuple(result, null);
+    }
+
+    final int[] colors = {#ff0000, #00ff00, #0000ff, #ff00ff};
+    orderCorners(positions);
+    for (int i = 0; i < positions.length; i++) {
+        result.drawCross(colors[i], positions[i], 30);
+    }
+    ArrayList<Position> bits = timingDots(input, positions[0], positions[3]);
+    ArrayList<Position> right = timingDots(input, positions[0], positions[1]);
+    ArrayList<Position> left = timingDots(input, positions[3], positions[2]);
+    result.drawLine(#00ffff, positions[2], positions[1]);
+
+    if (left.size() != right.size()) {
+        return new Tuple(result, null);
+    }
+    // for (int i = 0; i < left.size(); i++) {
+    //     result.drawLine(#3300cc, left.get(i), right.get(i));
+    // }
+
+    Line top = new Line(positions[0], positions[3]);
+    Line bottom = new Line(positions[1], positions[2]);
+    int[] bytes = new int[left.size() - 5];
+    int currentByte = 0;
+
+    for (int j = 3; j < bits.size() - 2; j++) {
+        Position p = bits.get(j);
+        Line bitLine = new Line(p, bottom.atRatio(top.ratio(p)));
+        // result.drawLine(#cc3300, bitLine);
+
+        for (int i = 3; i < left.size() - 2; i++) {
+            Position isect = new Line(left.get(i), right.get(i)).intersection(bitLine);
+            if (isect != null) {
+                if (input.at(isect) == 0) {
+                    result.drawCross(#FF1493, isect, 3);
+                    bytes[i-3] |= 1 << (j - 3);
+                }
+            }
         }
     }
-    return result;
+
+    return new Tuple(result, decodeBytes(bytes));
 }
 
 static Position[] components(Image bg, Image input) {

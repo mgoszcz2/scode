@@ -77,7 +77,10 @@ static class Line implements Iterable<Position> {
         }
 
         Position next() {
-            if (finished) throw new NoSuchElementException();
+            if (finished || invalid()) {
+                finished = true;
+                throw new NoSuchElementException();
+            }
 
             Position r = new Position(x0, y0);
             if (x0 == end.x && y0 == end.y) {
@@ -95,12 +98,15 @@ static class Line implements Iterable<Position> {
                 y0 += sy;
             }
 
-            if (x0 < 0 || y0 < 0 || x0 >= width || y0 >= height) finished = true;
             return r;
         }
 
+        private boolean invalid() {
+            return x0 < 0 || y0 < 0 || x0 >= width || y0 >= height;
+        }
+
         boolean hasNext() {
-            return !finished;
+            return !finished && !invalid();
         }
     }
 
@@ -112,11 +118,44 @@ static class Line implements Iterable<Position> {
     }
 
     Line(Position start, Position end) {
-        this(start, end, -1, -1);
+        this(start, end, Integer.MAX_VALUE, Integer.MAX_VALUE);
     }
 
     LineIterator iterator() {
         return new LineIterator();
+    }
+
+    float ratio(Position h) {
+        if (start.x != end.x) {
+            return (h.x - start.x) / (float)(end.x - start.x);
+        }
+        return (h.y - start.y) / (float)(end.y - start.y);
+    }
+
+    Position atRatio(float r) {
+        return new Position((int)(start.x + (end.x - start.x)*r), (int)(start.y + (end.y - start.y)*r));
+    }
+
+    // Ripped stackoverflow.com/questions/563198
+    Position intersection(Line h) {
+        float p0_x = start.x, p0_y = start.y;
+        float p1_x = end.x, p1_y = end.y;
+        float p2_x = h.start.x, p2_y = h.start.y;
+        float p3_x = h.end.x, p3_y = h.end.y;
+
+        float s1_x = p1_x - p0_x;
+        float s1_y = p1_y - p0_y;
+        float s2_x = p3_x - p2_x;
+        float s2_y = p3_y - p2_y;
+
+        float s = (-s1_y * (p0_x - p2_x) + s1_x * (p0_y - p2_y)) / (-s2_x * s1_y + s1_x * s2_y);
+        float t = ( s2_x * (p0_y - p2_y) - s2_y * (p0_x - p2_x)) / (-s2_x * s1_y + s1_x * s2_y);
+
+        if (s >= 0 && s <= 1 && t >= 0 && t <= 1) {
+            return new Position((int)(p0_x + (t * s1_x)), (int)(p0_y + (t * s1_y)));
+        }
+
+        return null;
     }
 }
 
@@ -250,14 +289,18 @@ static class Image {
         return new Line(start, end, width, height);
     }
 
-    void drawLine(int val, Position start, Position end) {
-        for (Position p : line(start, end)) {
+    void drawLine(int val, Line line) {
+        for (Position p : line) {
             pixels[p.y*width + p.x] = val;
         }
     }
 
+    void drawLine(int val, Position start, Position end) {
+        drawLine(val, line(start, end));
+    }
+
     void drawLine(int val, int x0, int y0, int x1, int y1) {
-        drawLine(val, new Position(x0, y0), new Position(x1, y1));
+        drawLine(val, line(new Position(x0, y0), new Position(x1, y1)));
     }
 
     private void fullColorArray(int[] input) {
