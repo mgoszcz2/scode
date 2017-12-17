@@ -126,8 +126,7 @@ void draw() {
     Image binary = binarize(resized, blurred, 0.8);
     drawGrid("Binarized", binary);
 
-    Position[] positions = scanFinder(binary);
-    Tuple<Image, String> decoded = drawOutline(resized, binary, positions);
+    Tuple<Image, String> decoded = drawOutline(resized, binary);
     drawGrid("Outline", decoded.a);
     if (decoded.b != null) println(decoded.b);
 
