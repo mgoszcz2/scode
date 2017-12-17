@@ -10,8 +10,8 @@ boolean looping = true;
 int sampleCount = 0;
 boolean showHeaders = true;
 
-final int SIZE = 200;
-final int GRID_WIDTH = 3;
+final int SIZE = 300;
+final int GRID_WIDTH = 2;
 final int GRID_HEIGHT = 2;
 final int GRID_HEADER = 60;
 float[] mean = new float[GRID_WIDTH * GRID_HEIGHT];
@@ -45,7 +45,7 @@ void keyPressed() {
     }
 }
 
-void drawGrid(String desc, Image img) {
+Image drawGrid(String desc, Image img) {
     assert gridPosition < GRID_WIDTH * GRID_HEIGHT;
     float took = millis() - lastOperation;
     mean[gridPosition] = mean[gridPosition] * (sampleCount - 1) / sampleCount + took / sampleCount;
@@ -77,6 +77,7 @@ void drawGrid(String desc, Image img) {
     popMatrix();
     lastOperation = millis();
     gridPosition++;
+    return img;
 }
 
 void setup() {
@@ -116,17 +117,17 @@ void draw() {
     clear();
     Image orignal = new Image(frameImage);
     drawGrid("Original", orignal);
+
     orignal.grayscale();
     Image resized = gaussian(resize(orignal, 0.8), 1.0);
     drawGrid("Processed", resized);
-    Image blurred = mean(resized, (int)(resized.width * 0.05));
-    drawGrid("Blurred", blurred);
-    Image binary = binarize(resized, blurred, -7);
+
+    Image blurred = mean(resized, (int)(resized.width * 0.04));
+    Image binary = binarize(resized, blurred, 0.8);
     drawGrid("Binarized", binary);
-    Image finder = findFinder(binary);
-    drawGrid("Finder", finder);
-    Image components = components(morph(morph(morph(finder, true), false), false));
-    drawGrid("Localised", combine(resized, morph(morph(findAuxFinder(binary, components), false), false), false));
+
+    Position[] positions = scanFinder(binary);
+    drawGrid("Outline", drawOutline(resized, binary, positions));
 
     while (gridPosition < GRID_WIDTH * GRID_HEIGHT) {
         int w = width / GRID_WIDTH;
@@ -135,5 +136,6 @@ void draw() {
         text("No image", w * (0.5 + gridPosition % GRID_WIDTH), h * (0.5 + gridPosition / GRID_WIDTH));
         gridPosition++;
     }
+
     if (staticImage) noLoop();
 }

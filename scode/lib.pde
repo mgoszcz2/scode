@@ -1,3 +1,5 @@
+import java.util.NoSuchElementException;
+
 static enum ImageKind {
     COLOR,
     GRAYSCALE,
@@ -6,7 +8,7 @@ static enum ImageKind {
 }
 
 static class Position {
-    int x, y;
+    final int x, y;
     Position(int x, int y) {
         this.x = x;
         this.y = y;
@@ -16,31 +18,141 @@ static class Position {
         return (float)Math.hypot(h.x - x, h.y - y);
     }
 
+    Position add(int dx, int dy) {
+        return new Position(x + dx, y + dy);
+    }
+
+    Position subtract(Position h) {
+        return new Position(x - h.x, y + h.y);
+    }
+
+    Position midpoint(Position h) {
+        return new Position((x + h.x)/2, (y + h.y)/2);
+    }
+
+    double atan2() {
+        return Math.atan2(y, x);
+    }
+
     String toString() {
         return String.format("(%d, %d)", x, y);
     }
+
+    boolean equals(Object h) {
+        if (h == null || !(h instanceof Position)) return false;
+        Position hp = (Position)h;
+        return hp.x == x && hp.y == y;
+    }
+
+    int hashCode() {
+        return x << 16 | y & 0xffff;
+    }
+
+    static Position mean(Position[] hs) {
+        int sx = 0, sy = 0;
+        for (Position p : hs) {
+            sx += p.x;
+            sy += p.y;
+        }
+        return new Position(sx / hs.length, sy / hs.length);
+    }
 }
 
-static class RingBuffer {
-    Position buffer[];
-    int items = 0;
-    RingBuffer(int size) {
-        buffer = new Position[size];
+static class Line implements Iterable<Position> {
+    final int width, height;
+    final Position start, end;
+
+    class LineIterator implements Iterator<Position> {
+        private final int dx, dy, sx, sy;
+        private int x0 = start.x, y0 = start.y;
+        private boolean finished = false;
+        private float error;
+
+        private LineIterator() {
+            dx = abs(end.x - x0);
+            dy = abs(end.y - y0);
+            sx = x0 < end.x ? 1 : -1;
+            sy = y0 < end.y ? 1 : -1;
+            error = (dx > dy ? dx : -dy) / 2.0;
+        }
+
+        Position next() {
+            if (finished) throw new NoSuchElementException();
+
+            Position r = new Position(x0, y0);
+            if (x0 == end.x && y0 == end.y) {
+                finished = true;
+                return r;
+            }
+
+            float e2 = error;
+            if (e2 > -dx) {
+                error -= dy;
+                x0 += sx;
+            }
+            if (e2 < dy) {
+                error += dx;
+                y0 += sy;
+            }
+
+            if (x0 < 0 || y0 < 0 || x0 >= width || y0 >= height) finished = true;
+            return r;
+        }
+
+        boolean hasNext() {
+            return !finished;
+        }
     }
 
-    void push(Position item) {
-        for (int i = 0; i < buffer.length - 1; i++) {
-            buffer[i] = buffer[i + 1];
-        }
-        buffer[buffer.length - 1] = item;
-        items++;
+    Line(Position start, Position end, int width, int height) {
+        this.start = start;
+        this.end = end;
+        this.width = width;
+        this.height = height;
     }
+
+    Line(Position start, Position end) {
+        this(start, end, -1, -1);
+    }
+
+    LineIterator iterator() {
+        return new LineIterator();
+    }
+}
+
+
+static class Tuple<A, B> {
+    final A a;
+    final B b;
+    Tuple(A a, B b) {
+        this.a = a;
+        this.b = b;
+    }
+}
+
+static <T> void ringPush(T[] buf, T item) {
+    for (int i = 0; i < buf.length - 1; i++) {
+        buf[i] = buf[i + 1];
+    }
+    buf[buf.length - 1] = item;
+}
+
+// buffer.length + 2 == ratios.length, not checked
+static boolean approxEqual(float[] ratios, Position[] buffer) {
+    final float error = 0.50;
+    float gap = buffer[1].hypot(buffer[0]);
+
+    for (int i = 1; i < buffer.length - 2; i++) {
+        float mgap = buffer[i + 1].hypot(buffer[i]);
+        if (Math.abs(ratios[i - 1] - mgap / gap) > error) return false;
+    }
+    return true;
 }
 
 static class Image {
-    int[] pixels;
-    int width;
-    int height;
+    final int[] pixels;
+    final int width;
+    final int height;
     ImageKind kind;
 
     Image(Image input) {
@@ -87,6 +199,7 @@ static class Image {
     }
 
     Image(int width, int height, ImageKind kind) {
+        assert width > 0 && height > 0;
         this.width = width;
         this.height = height;
         this.kind = kind;
@@ -97,8 +210,20 @@ static class Image {
         return y < 0 || x < 0 || y >= height || x >= width;
     }
 
+    int at(int x, int y) {
+        return pixels[y*width + x];
+    }
+
     int at(Position pos) {
         return pixels[pos.y*width + pos.x];
+    }
+
+    void setAt(int val, int x, int y) {
+        pixels[y*width + x] = val;
+    }
+
+    void setAt(int val, Position pos) {
+        pixels[pos.y*width + pos.x] = val;
     }
 
     private void normalizeArray(int[] input) {
@@ -114,26 +239,25 @@ static class Image {
         }
     }
 
-    void line(int val, int x0, int y0, int x1, int y1) {
-        int dx = abs(x1 - x0);
-        int dy = abs(y1 - y0);
-        int sx = x0 < x1 ? 1 : -1;
-        int sy = y0 < y1 ? 1 : -1;
-        float err = (dx > dy ? dx : -dy) / 2.0;
+    void drawCross(int val, Position pos, int k) {
+        drawLine(val, pos.add(-k, -k), pos.add(k, k));
+        drawLine(val, pos.add(-k, -k + 1), pos.add(k, k + 1));
+        drawLine(val, pos.add(-k, k), pos.add(k, -k));
+        drawLine(val, pos.add(-k, k + 1), pos.add(k, -k + 1));
+    }
 
-        for (;;) {
-            if (invalid(x0, y0) || (x0 == x1 && y0 == y1)) break;
-            pixels[y0*width + x0] = val;
-            float e2 = err;
-            if (e2 > -dx) {
-                err -= dy;
-                x0 += sx;
-            }
-            if (e2 < dy) {
-                err += dx;
-                y0 += sy;
-            }
+    Line line(Position start, Position end) {
+        return new Line(start, end, width, height);
+    }
+
+    void drawLine(int val, Position start, Position end) {
+        for (Position p : line(start, end)) {
+            pixels[p.y*width + p.x] = val;
         }
+    }
+
+    void drawLine(int val, int x0, int y0, int x1, int y1) {
+        drawLine(val, new Position(x0, y0), new Position(x1, y1));
     }
 
     private void fullColorArray(int[] input) {

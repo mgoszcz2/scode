@@ -40,107 +40,61 @@ static Image mean(Image image, int k) {
 }
 
 // Negtaive nudge makes more white
-static Image binarize(Image image, Image values, int nudge) {
+static Image binarize(Image image, Image values, float treshold) {
     image.ensureGrayscale();
     values.ensureGrayscale();
     assert image.equalSize(values);
     Image result = Image.withSize(image);
     for (int i = 0; i < image.pixels.length; i++) {
-        result.pixels[i] = image.pixels[i] > values.pixels[i] + nudge ? 255 : 0;
+        result.pixels[i] = image.pixels[i] / (0.01 + values.pixels[i]) < treshold ? 0 : 255;
     }
     result.kind = ImageKind.BINARY;
     return result;
 }
 
-static private boolean approxEqual(RingBuffer ring, float[] ratios, float error) {
-    if (ring.items < ring.buffer.length) return false;
-    float gap = ring.buffer[1].hypot(ring.buffer[0]);
+private static ArrayList<Position> scanRatio(Image input, Position start, Position end) {
+    input.ensureBinary();
 
-    for (int i = 1; i < ring.buffer.length - 2; i++) {
-        float mgap = ring.buffer[i + 1].hypot(ring.buffer[i]);
-        if (Math.abs(ratios[i - 1] - mgap / gap) > error) return false;
-    }
+    final float[] ratios = {0.667, 1.667, 0.667, 1.0};
+    ArrayList<Position> result = new ArrayList();
+    Position[] buffer = new Position[ratios.length + 2];
+    int lastv = input.at(start);
+    int runs = 0;
+    Position lastp = null;
 
-    return true;
-}
-
-static private void lineCheck(Image result, Image input, float[] ratios, float error, int x0, int y0, int x1, int y1) {
-    input.ensureGrayscale();
-    result.ensureGrayscale();
-    RingBuffer ring = new RingBuffer(ratios.length + 2);
-    int lastVal = input.pixels[y0*input.width + x0];
-
-    int dx = abs(x1 - x0);
-    int dy = abs(y1 - y0);
-    int sx = x0 < x1 ? 1 : -1;
-    int sy = y0 < y1 ? 1 : -1;
-    float err = (dx > dy ? dx : -dy) / 2.0;
-
-    for (;;) {
-        if (input.invalid(x0, y0) || (x0 == x1 && y0 == y1)) break;
-        int val = input.pixels[y0*input.width + x0];
-        if (val != lastVal) {
-            ring.push(new Position(x0, y0));
-            lastVal = val;
-            if (val > 0 && approxEqual(ring, ratios, error)) {
-                result.line(255, ring.buffer[0].x, ring.buffer[0].y, ring.buffer[ring.buffer.length-1].x, ring.buffer[ring.buffer.length-1].y);
+    for (Position p : input.line(start, end)) {
+        int v = input.at(p);
+        if (v != lastv) {
+            lastv = v;
+            // Evens out BWBW transitions
+            ringPush(buffer, v > 0 ? lastp : p);
+            runs++;
+            if (v > 0 && runs >= 6 && approxEqual(ratios, buffer)) {
+                result.add(buffer[0].midpoint(buffer[buffer.length - 1]));
             }
         }
-
-        float e2 = err;
-        if (e2 > -dx) {
-            err -= dy;
-            x0 += sx;
-        }
-        if (e2 < dy) {
-            err += dx;
-            y0 += sy;
-        }
-    }
-}
-
-static Image findFinder(Image input) {
-    input.ensureBinary();
-    final float[] ratios = {0.63, 1.82, 0.63, 1.00};
-
-    Image rx = Image.withSize(input, ImageKind.BINARY);
-    Image ry = Image.withSize(input, ImageKind.BINARY);
-
-    for (int y = 0; y < input.height; y++) {
-        lineCheck(rx, input, ratios, 0.35, 0, y, input.width, y);
-    }
-    for (int x = 0; x < input.width; x++) {
-        lineCheck(ry, input, ratios, 0.35, x, 0, x, input.height);
-    }
-    return combine(rx, ry, true);
-}
-
-static Image findAuxFinder(Image input, Image components) {
-    // final float[] ratios = {1.00, 1.00, 1.00, 1.00, 1.00};
-    final float[] ratios = {1.00, 1.00, 1.00, 1.00, 0.80, 0.45, 0.50, 0.45};
-    input.ensureBinary();
-    components.ensureBinary();
-    assert input.equalSize(components);
-
-    int d = input.width * 3 / 4;
-    Image result = Image.withSize(input, ImageKind.BINARY);
-
-    for (int y = 0; y < input.height; y++) {
-        for (int x = 0; x < input.width; x++) {
-            if (components.pixels[y*input.width + x] > 0) {
-                result.pixels[y*input.width + x] = 255;
-                result.pixels[y*input.width + x + 1] = 255;
-                result.pixels[y*input.width + x - 1] = 255;
-                result.pixels[y*input.width + x + input.width] = 255;
-                result.pixels[y*input.width + x - input.width] = 255;
-                for (int i = 0; i < 720; i++) {
-                    // result.line(255, x, y, (int)(x + d * cos(i*PI/360)), (int)(y + d * sin(i*PI/360)));
-                    lineCheck(result, input, ratios, 0.35, x, y, (int)(x + d * cos(i*PI/360)), (int)(y + d * sin(i*PI/360)));
-                }
-            }
-        }
+        lastp = p;
     }
     return result;
+}
+
+static Image showPoints(Image bg, Iterable<Position> positions) {
+    Image res = new Image(bg, ImageKind.COLOR);
+    for (Position p : positions) res.setAt(#ff0000, p);
+    return res;
+}
+
+static Position[] scanFinder(Image input) {
+    input.ensureBinary();
+    HashSet<Position> h = new HashSet<Position>(), v = new HashSet<Position>();
+    for (int i = 0; i < input.height; i++) {
+        h.addAll(scanRatio(input, new Position(0, i), new Position(input.width - 1, i)));
+    }
+    for (int i = 0; i < input.width; i++) {
+        v.addAll(scanRatio(input, new Position(i, 0), new Position(i, input.height - 1)));
+    }
+    h.retainAll(v);
+    return h.size() == 4 ? h.toArray(new Position[0]) : null;
 }
 
 private static void flood(boolean[] result, Image input, int x, int y) {
@@ -155,22 +109,69 @@ private static void flood(boolean[] result, Image input, int x, int y) {
     flood(result, input, x, y - 1);
 }
 
-static Image components(Image input) {
+private static ArrayList<Position> timingDots(Image input, Position start, Position end) {
+    input.ensureBinary();
+    ArrayList<Position> result = new ArrayList<Position>();
+    Position lastp = start;
+    int lastv = input.at(start);
+
+    for (Position p : input.line(start, end)) {
+        int v = input.at(p);
+        if (v != lastv) {
+            result.add(lastp.midpoint(p));
+            lastv = v;
+            lastp = p;
+        }
+    }
+    return result;
+}
+
+private static void orderCorners(Position[] positions) {
+    final Position m = Position.mean(positions);
+    Arrays.sort(positions, new Comparator<Position>(){
+        public int compare(Position a, Position b) {
+            return Double.compare(a.subtract(m).atan2(), b.subtract(m).atan2());
+        }
+    });
+}
+
+static Image drawOutline(Image bg, Image input, Position[] positions) {
+    input.ensureBinary();
+    Image result = new Image(bg, ImageKind.COLOR);
+    if (positions != null) {
+        final int[] colors = {#ff0000, #00ff00, #0000ff, #ff00ff};
+        orderCorners(positions);
+        for (int i = 0; i < positions.length; i++) {
+            result.drawCross(colors[i], positions[i], 30);
+        }
+        ArrayList<Position> right = timingDots(input, positions[0], positions[1]);
+        result.drawLine(#00ffff, positions[1], positions[2]);
+        ArrayList<Position> left = timingDots(input, positions[3], positions[2]);
+        result.drawLine(#00ffff, positions[3], positions[0]);
+        for (int i = 0; i < min(left.size(), right.size()); i++) {
+            result.drawLine(#3300cc, left.get(i), right.get(i));
+        }
+    }
+    return result;
+}
+
+static Position[] components(Image bg, Image input) {
     input.ensureGrayscale();
-    Image result = Image.withSize(input, ImageKind.BINARY);
     boolean[] store = new boolean[input.width * input.height];
-    int component = 1;
+    Position[] result = new Position[4];
+    int component = 0;
 
     for (int y = 0; y < input.height; y++) {
         for (int x = 0; x < input.width; x++) {
             int ix = y*input.width + x;
             if (!store[ix] && input.pixels[ix] > 0) {
                 flood(store, input, x, y);
-                result.pixels[ix] = 255;
+                if (component >= 4) return null;
+                result[component++] = new Position(x, y);
             }
         }
     }
-    return result;
+    return component == 4 ? result : null;
 }
 
 static Image resize(Image image, float scale) {
@@ -253,22 +254,22 @@ static int angle(int x, int y) {
     return ((int)((atan2(x, y) + PI) * 180 / PI) + 90) % 360;
 }
 
-// all means erode
-static Image morph(Image input, boolean allMode) {
+static Image morph(Image input, int k, boolean dilute) {
     input.ensureBinary();
     Image result = Image.withSize(input, ImageKind.BINARY);
-    for (int y = 1; y < input.height - 1; y++) {
-        for (int x = 1; x < input.width - 1; x++) {
-            int ix = y*input.width + x;
-            boolean t0 = input.pixels[ix - input.width] > 0;
-            boolean t1 = input.pixels[ix - 1] > 0;
-            boolean t2 = input.pixels[ix + 1] > 0;
-            boolean t3 = input.pixels[ix + input.width] > 0;
-            if (allMode) {
-                result.pixels[ix] = t0 && t1 && t2 && t3 ? 255 : 0;
-            } else {
-                result.pixels[ix] = t0 || t1 || t2 || t3 ? 255 : 0;
+    for (int y = k; y < input.height - k - 1; y++) {
+        for (int x = k; x < input.width - k - 1; x++) {
+            boolean r = dilute;
+            for (int dy = -k; dy <= k; dy++) {
+                for (int dx = -k - dy; dx <= k - dy; dx++) {
+                    if (dilute) {
+                        r &= input.pixels[(y + dy)*input.width + x + dx] > 0;
+                    } else {
+                        r |= input.pixels[(y + dy)*input.width + x + dx] > 0;
+                    }
+                }
             }
+            result.pixels[y*input.width + x] = r ? 255 : 0;
         }
     }
     return result;

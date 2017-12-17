@@ -59,11 +59,11 @@ void keyPressed() {
 
 void finderDot(int x, int y) {
     // ####    #####    ####
-    // 1.2  0.8  1  0.8  1.2
+    // 1.2  0.8  2  0.8  1.2
     //         <-1->
     //     <--- 1.8 --->
     // <-------- 3 -------->
-    // Since first bar ratios: {1.0, 0.666.., 0.833.., 0.666.., 1.0}
+    // Since first bar ratios: {1.0, 0.667.., 1.667.., 0.667.., 1.0}
     float r0 = TIMING_RADIUS * 3;
     float r1 = TIMING_RADIUS * 1.8;
     float r2 = TIMING_RADIUS * 1;
