@@ -1,10 +1,14 @@
 import java.util.*;
 
-static Image mean(Image image, int k) {
+static Image mean(Image input, int k) {
+    Image result = new Image(input);
+    meanInPlace(result, k);
+    return result;
+}
+
+static void meanInPlace(Image image, int k) {
     image.ensureGrayscale();
     int[] summed = new int[image.height * image.width];
-    Image result = Image.withSize(image);
-
     summed[0] = image.pixels[0] & 0xff;
     for (int x = 1; x < image.width; x++) {
         summed[x] = summed[x - 1] + (image.pixels[x] & 0xff);
@@ -32,11 +36,9 @@ static Image mean(Image image, int k) {
             int t2 = summed[ix - kt*image.width + kr];
             int t3 = summed[ix - kt*image.width - kl];
 
-            result.pixels[y * result.width + x] = (t0 - t1 - t2 + t3) / window;
+            image.pixels[y * image.width + x] = (t0 - t1 - t2 + t3) / window;
         }
     }
-
-    return result;
 }
 
 // Negtaive nudge makes more white
@@ -83,24 +85,69 @@ static Point[] components(Image bg, Image input) {
     return component == 4 ? result : null;
 }
 
-static Image resize(Image image, float scale) {
-    image.ensureGrayscale();
-    // Hack, always shrinks image by 1px even at s=1.0
-    Image result = new Image(ceil(image.width * scale) - 1, ceil(image.height * scale) - 1);
-    for (int y = 0; y < result.height; y++) {
-        for (int x = 0; x < result.width; x++) {
-            int px = (int)(x / scale);
-            int py = (int)(y / scale);
-            float dx = x / scale - px;
-            float dy = y / scale - py;
+static Image resize(Image image, float ratio) {
+    return resize(image, round(image.width * ratio), round(image.height * ratio));
+}
 
-            int ix = py * image.width + px;
-            int a = image.pixels[ix] & 0xff;
-            int b = image.pixels[ix + 1] & 0xff;
-            int c = image.pixels[ix + image.width] & 0xff;
-            int d = image.pixels[ix + image.width + 1] & 0xff;
-            int gray = (int)(a*(1-dx)*(1-dy) +  b*dx*(1-dy) + c*dy*(1-dx) + d*dx*dy);
-            result.pixels[y * result.width + x] = gray;
+static Image resize(Image image, int width, int height) {
+    Image result = new Image(width, height, image.kind);
+    float xratio = (image.width - 1)/(float)width;
+    float yratio = (image.height - 1)/(float)height;
+
+    if (image.kind == ImageKind.GRAYSCALE) {
+        for (int y = 0; y < result.height; y++) {
+            for (int x = 0; x < result.width; x++) {
+                int px = (int)(x*xratio);
+                int py = (int)(y*yratio);
+                float dx = x*xratio - px;
+                float dy = y*yratio - py;
+
+                int ix = py * image.width + px;
+                int a = image.pixels[ix];
+                int b = image.pixels[ix + 1];
+                int c = image.pixels[ix + image.width];
+                int d = image.pixels[ix + image.width + 1];
+                int gray = (int)(a*(1-dx)*(1-dy) +  b*dx*(1-dy) + c*dy*(1-dx) + d*dx*dy);
+                result.pixels[y*result.width + x] = gray;
+            }
+        }
+
+    } else if (image.kind == ImageKind.COLOR) {
+        for (int y = 0; y < result.height; y++) {
+            for (int x = 0; x < result.width; x++) {
+                int px = (int)(x*xratio);
+                int py = (int)(y*yratio);
+                float dx = x*xratio - px;
+                float dy = y*yratio - py;
+
+                int ix = py * image.width + px;
+                int a = image.pixels[ix];
+                int b = image.pixels[ix + 1];
+                int c = image.pixels[ix + image.width];
+                int d = image.pixels[ix + image.width + 1];
+
+                float am = (1 - dx)*(1 - dy);
+                float bm = dx*(1 - dy);
+                float cm = (1 - dx)*dy;
+                float dm = dx*dy;
+
+                float cb = (a & 0xff)*am
+                         + (b & 0xff)*bm
+                         + (c & 0xff)*cm
+                         + (d & 0xff)*dm;
+
+                float cg = ((a >> 8) & 0xff)*am
+                         + ((b >> 8) & 0xff)*bm
+                         + ((c >> 8) & 0xff)*cm
+                         + ((d >> 8) & 0xff)*dm;
+
+                float cr = ((a >> 16) & 0xff)*am
+                         + ((b >> 16) & 0xff)*bm
+                         + ((c >> 16) & 0xff)*cm
+                         + ((d >> 16) & 0xff)*dm;
+
+                result.pixels[y*result.width + x] = ((int)cr << 16) | ((int)cg << 8) | (int)cb;
+            }
         }
     }
     return result;
@@ -115,6 +162,56 @@ static Image evenCrop(Image input, int width, int height) {
         }
     }
     return result;
+}
+
+static Image combine(Image[] channels) {
+    assert channels.length == 3;
+    channels[0].ensureGrayscale();
+    channels[1].ensureGrayscale();
+    channels[2].ensureGrayscale();
+    assert channels[0].equalSize(channels[1]) && channels[1].equalSize(channels[2]);
+
+    Image result = Image.withSize(channels[0], ImageKind.COLOR);
+    for (int i = 0; i < result.pixels.length; i++) {
+        result.pixels[i] = (channels[0].pixels[i] << 16) | (channels[1].pixels[i] << 8) | channels[2].pixels[i];
+    }
+    return result;
+}
+
+static Image[] separate(Image input) {
+    assert input.kind == ImageKind.COLOR;
+
+    Image[] result = new Image[3];
+    for (int i = 0; i < 3; i++) {
+        result[i] = Image.withSize(input, ImageKind.GRAYSCALE);
+    }
+
+    for (int i = 0; i < input.pixels.length; i++) {
+        result[0].pixels[i] = (input.pixels[i] >> 16) & 0xff;
+        result[1].pixels[i] = (input.pixels[i] >> 8) & 0xff;
+        result[2].pixels[i] = input.pixels[i] & 0xff;
+    }
+    return result;
+}
+
+static void saturateInPlace(Image input, float factor) {
+    input.ensureColor();
+    for (int i = 0; i < input.pixels.length; i++) {
+        input.pixels[i] = saturate(input.pixels[i], factor);
+    }
+}
+
+static Image vibrantBlur(Image input, int width, int height) {
+    // We resize down to max 100x100, blur it a lot and resize it back
+    float ratio = 100.0/input.width;
+    Image[] channels = separate(resize(input, ratio));
+    for (int i = 0; i < 3; i++) {
+        meanInPlace(channels[i], 16);
+        meanInPlace(channels[i], 8);
+    }
+    Image combined = combine(channels);
+    saturateInPlace(combined, 1.5);
+    return resize(combined, width, height);
 }
 
 static Image gaussian(Image input, float sigma) {
@@ -159,10 +256,6 @@ static Image gaussian(Image input, float sigma) {
     return store;
 }
 
-static int angle(int x, int y) {
-    return ((int)((atan2(x, y) + PI) * 180 / PI) + 90) % 360;
-}
-
 static Image morph(Image input, int k, boolean dilute) {
     input.ensureBinary();
     Image result = Image.withSize(input, ImageKind.BINARY);
@@ -182,72 +275,6 @@ static Image morph(Image input, int k, boolean dilute) {
         }
     }
     return result;
-}
-
-// Should be blurred by this point
-static Image edges(Image image) {
-    image.ensureGrayscale();
-    Image mask = new Image(image.width - 2, image.height - 2, ImageKind.DATA);
-    int[][] gradient = new int[2][mask.height * mask.width];
-    int[] mag = new int[mask.height * mask.width];
-
-    // We could separate this but we don't bother
-    for (int y = 1; y < image.height - 1; y++) {
-        for (int x = 1; x < image.width - 1; x++) {
-            int ix = y*image.width + x;
-            int t00 = image.pixels[ix - image.width - 1] & 0xff;
-            int t10 = image.pixels[ix - image.width] & 0xff;
-            int t20 = image.pixels[ix - image.width + 1] & 0xff;
-            int t01 = image.pixels[ix - 1] & 0xff;
-            int t21 = image.pixels[ix + 1] & 0xff;
-            int t02 = image.pixels[ix + image.width - 1] & 0xff;
-            int t12 = image.pixels[ix + image.width] & 0xff;
-            int t22 = image.pixels[ix + image.width + 1] & 0xff;
-
-            int dy = t00 + 2*t01 + t02 - t20 - 2*t21 - t22;
-            int dx = t00 + 2*t10 + t20 - t02 - 2*t12 - t22;
-
-            int gix = (y - 1)*mask.width + x - 1;
-            gradient[0][gix] = dy;
-            gradient[1][gix] = dx;
-            mag[gix] = (int)sqrt(dy*dy + dx*dx);
-        }
-    }
-
-    for (int y = 1; y < mask.height - 1; y++) {
-        for (int x = 1; x < mask.width - 1; x++) {
-            int ix = y*mask.width + x;
-            float t00 = mag[ix - mask.width - 1];
-            float t10 = mag[ix - mask.width];
-            float t20 = mag[ix - mask.width + 1];
-            float t01 = mag[ix - 1];
-            float t11 = mag[ix];
-            float t21 = mag[ix + 1];
-            float t02 = mag[ix + mask.width - 1];
-            float t12 = mag[ix + mask.width];
-            float t22 = mag[ix + mask.width + 1];
-
-            float t = atan2(gradient[0][ix], gradient[1][ix]);
-            int dir = (int)(((t + PI / 8) / PI * 4) + 4) % 4;
-            if ((dir == 2 && t01 < t11 && t11 > t21) ||
-                (dir == 3 && t02 < t11 && t11 > t20) ||
-                (dir == 0 && t10 < t11 && t11 > t12) ||
-                (dir == 1 && t00 < t11 && t11 > t22)) {
-
-                mask.pixels[ix] = mag[ix];
-            }
-        }
-    }
-
-    mask.grayscale();
-    mask = binarize(mask, mean(mask, 3), 5);
-    for (int i = 0; i < mask.pixels.length; i++) {
-        if (mask.pixels[i] > 0) {
-            mask.pixels[i] = 1 + angle(gradient[0][i], gradient[1][i]);
-        }
-    }
-    mask.kind = ImageKind.DATA;
-    return mask;
 }
 
 static Image combine(Image a, Image b, boolean both) {

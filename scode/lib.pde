@@ -159,35 +159,6 @@ static class Line implements Iterable<Point> {
     }
 }
 
-
-static class Tuple<A, B> {
-    final A a;
-    final B b;
-    Tuple(A a, B b) {
-        this.a = a;
-        this.b = b;
-    }
-}
-
-static <T> void ringPush(T[] buf, T item) {
-    for (int i = 0; i < buf.length - 1; i++) {
-        buf[i] = buf[i + 1];
-    }
-    buf[buf.length - 1] = item;
-}
-
-// buffer.length + 2 == ratios.length, not checked
-static boolean approxEqual(float[] ratios, Point[] buffer) {
-    final float error = 0.50;
-    float gap = buffer[1].hypot(buffer[0]);
-
-    for (int i = 1; i < buffer.length - 2; i++) {
-        float mgap = buffer[i + 1].hypot(buffer[i]);
-        if (Math.abs(ratios[i - 1] - mgap / gap) > error) return false;
-    }
-    return true;
-}
-
 static class Image {
     final int[] pixels;
     final int width;
@@ -324,6 +295,10 @@ static class Image {
         assert kind == ImageKind.BINARY;
     }
 
+    void ensureColor() {
+        assert kind == ImageKind.COLOR;
+    }
+
     boolean compatible(Image h) {
         return h.kind == kind ||
             (h.kind == ImageKind.GRAYSCALE && kind == ImageKind.BINARY) ||
@@ -358,5 +333,9 @@ static class Image {
         fullColorArray(result.pixels);
         result.updatePixels();
         return result;
+    }
+
+    String toString() {
+        return String.format("%dx%d(%s)", width, height, kind);
     }
 }

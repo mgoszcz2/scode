@@ -5,7 +5,7 @@ boolean frameResized;
 PImage frameImage;
 boolean staticImage = false;
 boolean looping = true;
-DebugData debugData = new DebugData();
+DebugData debugData = new DebugData(300, 2, 2);
 
 void resize() {
     debugData.resize();
@@ -69,13 +69,13 @@ void draw() {
     Image orignal = new Image(frameImage);
     drawer.draw("Original", orignal);
     orignal.grayscale();
-    Image resized = gaussian(resize(orignal, 0.8), 1.0);
+    Image resized = gaussian(orignal, 1.0);
     drawer.draw("Processed", resized);
     Image blurred = mean(resized, (int)(resized.width * 0.04));
     Image binary = binarize(resized, blurred, 0.8);
     drawer.draw("Binarized", binary);
     DecoderData decoded = decodeCode(resized, binary);
-    drawer.draw("Outline", binary);
+    drawer.draw("Outline", vibrantBlur(new Image(frameImage), debugData.windowWidth(), debugData.windowHeight()));
 
     drawer.end();
     if (staticImage) noLoop();

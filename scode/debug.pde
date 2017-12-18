@@ -1,21 +1,36 @@
 class DebugData {
-    static private final int SIZE = 300;
-    static private final int GRID_WIDTH = 2;
-    static private final int GRID_HEIGHT = 2;
-    static private final int GRID_HEADER = 60;
+    private final int SIZE;
+    private final int GRID_WIDTH;
+    private final int GRID_HEIGHT;
+    private final int GRID_HEADER = 60;
 
     private int gridPosition;
     private int lastOperation;
 
-    private float[] mean = new float[GRID_WIDTH * GRID_HEIGHT];
+    private float[] mean;
     private int sampleCount;
 
     boolean showHeaders = true;
+
+    DebugData(int size, int width, int height) {
+        SIZE = size;
+        GRID_WIDTH = width;
+        GRID_HEIGHT = height;
+        mean = new float[GRID_WIDTH * GRID_HEIGHT];
+    }
 
     void resize() {
         int w = (int)(frameImage.width * ((float)SIZE / frameImage.height) * GRID_WIDTH);
         int h = debugData.showHeaders ? (GRID_HEADER + SIZE) * GRID_HEIGHT : SIZE * GRID_HEIGHT;
         surface.setSize(w, h);
+    }
+
+    int windowWidth() {
+        return width / GRID_WIDTH;
+    }
+
+    int windowHeight() {
+        return height / GRID_HEIGHT - GRID_HEADER;
     }
 
     class Drawer {
