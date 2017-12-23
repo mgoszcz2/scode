@@ -1,21 +1,10 @@
 import processing.video.*;
 import java.util.concurrent.*;
 
-Capture camera;
-boolean frameResized;
-PImage currentImage;
-boolean staticImage = false;
-boolean looping = true;
-FutureTask<DecoderData> decoderResult;
-final ExecutorService pool = Executors.newSingleThreadExecutor();
-final int GOAL_HEIGHT = 500;
-int lastDetection = millis();
-AnimationState animation;
-
 final class AnimationState {
     private final static int FADE_TIME = 500;
     // private final static int REVERSE_TIME = 900;
-    private final static int REVERSE_TIME = 8000;
+    private final static int REVERSE_TIME = 900;
     // final static int ANIMATION_TIME = 1250;
     final static int ANIMATION_TIME = REVERSE_TIME + 300;
 
@@ -112,6 +101,19 @@ void keyPressed() {
     }
 }
 
+Capture camera;
+boolean frameResized;
+PImage currentImage;
+PImage debugView;
+boolean staticImage = false;
+boolean looping = true;
+FutureTask<DecoderData> decoderResult;
+final ExecutorService pool = Executors.newSingleThreadExecutor();
+final int GOAL_HEIGHT = 500;
+int lastDetection = millis();
+AnimationState animation;
+
+
 void setup() {
     PFont font = loadFont("futura.vlw");
     textFont(font, 30);
@@ -161,6 +163,9 @@ void draw() {
 
         noStroke();
         image(currentImage, 0, 0, width, height);
+        if (debugView != null) {
+            image(debugView, 0, 0, width / 1.5, height / 1.5);
+        }
         textSize(12);
         textAlign(LEFT, CENTER);
         text(round(frameRate) + " fps", 15, 15);
@@ -171,6 +176,9 @@ void draw() {
                     animation = new AnimationState(data);
                 }
                 decoderResult = null;
+                // if (data.debugView != null) {
+                //     debugView = data.debugView.get(this);
+                // }
                 fill(255);
                 textAlign(RIGHT, CENTER);
                 text(data.error == null ? "Decoded" : data.error, width - 30, height - 15);

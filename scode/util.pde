@@ -1,9 +1,9 @@
-static class Tuple<A, B> {
-    final A a;
-    final B b;
-    Tuple(A a, B b) {
-        this.a = a;
-        this.b = b;
+final static class Result<S, E> {
+    final S result;
+    final E error;
+    Result(S result, E error) {
+        this.result = result;
+        this.error = error;
     }
 }
 
@@ -16,10 +16,18 @@ static <T> void ringPush(T[] buf, T item) {
     buf[buf.length - 1] = item;
 }
 
+// static <T> void reverse(T[] arr) {
+//     for (int i = 0; i < arr.length / 2; i++) {
+//         int t = arr[i];
+//         arr[i] = arr[arr.length - i - 1];
+//         arr[arr.length - i - 1] = t;
+//     }
+// }
+
 // Orders corner of a polygon (atan2 style unit circle)
-private static void orderCorners(Point[] positions) {
-    final Point m = Point.mean(positions);
-    Arrays.sort(positions, new Comparator<Point>(){
+private static void orderCorners(Point[] corners) {
+    final Point m = Point.mean(corners);
+    Arrays.sort(corners, new Comparator<Point>(){
         public int compare(Point a, Point b) {
             return Double.compare(a.subtract(m).atan2(), b.subtract(m).atan2());
         }

@@ -1,5 +1,5 @@
 static class DecoderData {
-    Image capture;
+    Image capture, debugView;
     Point[] corners;
     String content;
     String error;
@@ -35,14 +35,35 @@ static class Pipeline implements Callable<DecoderData> {
         Image original = new Image(input);
         Image blurred = gaussian(grayscale(original), 1.0);
         Image extraBlurred = mean(blurred, (int)(blurred.width * 0.04));
-        Image input = binarize(blurred, extraBlurred, 0.8);
+        Image binary = binarize(blurred, extraBlurred, 0.8);
 
-        Point[] positions = scanFinder(input);
-        if (positions == null) {
+        Point[] corners = scanFinder(binary);
+        if (corners == null) {
             return DecoderData.localisationError("Not enough fips");
         }
+        orderCorners(corners);
+        Point[] originalCorners = new Point[corners.length];
+        arrayCopy(corners, originalCorners);
 
-        orderCorners(positions);
+        DecoderData result = decodeWithCorners(binary, corners);
+        if (result.error != null) {
+            for (int i = 0; i < 3; i++) {
+                shiftArray(corners);
+                DecoderData r = decodeWithCorners(binary, corners);
+                if (r.error == null) {
+                    result = r;
+                    break;
+                }
+            }
+        }
+        if (result.error == null) {
+            result.corners = originalCorners;
+            result.capture = evenCrop(original, binary.width, binary.height);
+        }
+        return result;
+    }
+
+    private DecoderData decodeWithCorners(Image input, Point[] positions) {
         // Must be right to left like bits
         ArrayList<Point> bits = timingDots(input, positions[1], positions[0]);
         // Timing lines must be top to bottom
@@ -56,35 +77,75 @@ static class Pipeline implements Callable<DecoderData> {
         // Must be the same direction
         Line top = new Line(positions[0], positions[1]);
         Line bottom = new Line(positions[3], positions[2]);
-        int[] bytes = new int[left.size() - 5];
+        int[] bytes = new int[left.size() - 4];
         int currentByte = 0;
 
-        for (int j = 3; j < bits.size() - 2; j++) {
+        Image debugView = new Image(input, ImageKind.COLOR);
+        for (int i = 0; i < left.size(); i++) {
+            debugView.drawLine(#ff0000, new Line(left.get(i), right.get(i)));
+        }
+        for (int j = 2; j < bits.size() - 2; j++) {
+            Point p = bits.get(j);
+            debugView.drawLine(#00ff00, new Line(p, bottom.atRatio(top.ratio(p))));
+        }
+
+        for (int j = 2; j < bits.size() - 2; j++) {
             Point p = bits.get(j);
             Line bitLine = new Line(p, bottom.atRatio(top.ratio(p)));
 
-            for (int i = 3; i < left.size() - 2; i++) {
+            for (int i = 2; i < left.size() - 2; i++) {
                 Point isect = new Line(left.get(i), right.get(i)).intersection(bitLine);
                 if (isect != null) {
                     if (input.at(isect) == 0) {
-                        bytes[i-3] |= 1 << (j - 3);
+                        bytes[i-2] |= 1 << (j - 2);
                     }
                 }
             }
         }
 
+
+        Result<String, String> decoded = decodeBytes(bytes);
+        if (decoded.error != null) {
+            DecoderData result = DecoderData.decodingError(decoded.error);
+            result.debugView = debugView;
+            return result;
+        }
+        DecoderData result = new DecoderData();
+        result.content = decoded.result;
+        return result;
+    }
+
+    static private <T> void shiftArray(T[] arr) {
+        T t = arr[0];
+        for (int i = 0; i < arr.length - 1; i++) {
+            arr[i] = arr[i + 1];
+        }
+        arr[arr.length - 1] = t;
+    }
+
+    static private void reverseBits(int[] bytes) {
+        for (int i = 0; i < bytes.length; i++) {
+            int r = 0, t = bytes[i];
+            for (int j = 0; j < 9; j++) {
+                r |= ((t >> j) & 1) << (8 - j);
+            }
+            bytes[i] = r;
+        }
+    }
+
+    private Result<String, String> decodeBytes(int[] bytes) {
         final int lfsrTap = 0x7ae;
         String r = "";
 
         if (bytes[bytes.length - 1] != 1) {
-            return DecoderData.decodingError("Not version 1");
+            return new Result(null, "Not version 1");
         }
 
         int lfsr = 1;
         for (int i = 0; i < bytes.length - 1; i++) {
             int b = bytes[i] ^ lfsr;
             if (evenParity(b & 0xff) != ((b >> 8) & 1)) {
-                return DecoderData.decodingError("Parity error");
+                return new Result(null, "Parity error");
             }
 
             // Ignore padding null bytes
@@ -96,67 +157,65 @@ static class Pipeline implements Callable<DecoderData> {
             if (lb) lfsr ^= lfsrTap;
         }
 
-        //Note, 'capture' assigned in pipeline (sigh :( )
-        DecoderData result = new DecoderData();
-        result.content = r;
-        result.corners = positions;
-        result.capture = evenCrop(original, input.width, input.height);
-        return result;
+        return new Result(r, null);
     }
-}
 
-private static ArrayList<Point> scanRatio(Image input, Point start, Point end) {
-    input.ensureBinary();
+    private ArrayList<Point> scanRatio(Image input, Point start, Point end) {
+        input.ensureBinary();
 
-    final float[] ratios = {0.667, 1.667, 0.667, 1.0};
-    ArrayList<Point> result = new ArrayList();
-    Point[] buffer = new Point[ratios.length + 2];
-    int lastv = input.at(start);
-    int runs = 0;
-    Point lastp = null;
+        final float[] ratios = {0.667, 1.667, 0.667, 1.0};
+        ArrayList<Point> result = new ArrayList();
+        Point[] buffer = new Point[ratios.length + 2];
+        int lastv = input.at(start);
+        int runs = 0;
+        Point lastp = null;
 
-    for (Point p : input.line(start, end)) {
-        int v = input.at(p);
-        if (v != lastv) {
-            lastv = v;
-            // Evens out BWBW transitions
-            ringPush(buffer, v > 0 ? lastp : p);
-            runs++;
-            if (v > 0 && runs >= 6 && approxEqual(ratios, buffer)) {
-                result.add(buffer[0].midpoint(buffer[buffer.length - 1]));
+        for (Point p : input.line(start, end)) {
+            int v = input.at(p);
+            if (v != lastv) {
+                lastv = v;
+                // Evens out BWBW transitions
+                ringPush(buffer, v > 0 ? lastp : p);
+                runs++;
+                if (v > 0 && runs >= 6 && approxEqual(ratios, buffer)) {
+                    result.add(buffer[0].midpoint(buffer[buffer.length - 1]));
+                }
             }
-        }
-        lastp = p;
-    }
-    return result;
-}
-
-private static Point[] scanFinder(Image input) {
-    input.ensureBinary();
-    HashSet<Point> h = new HashSet<Point>(), v = new HashSet<Point>();
-    for (int i = 0; i < input.height; i++) {
-        h.addAll(scanRatio(input, new Point(0, i), new Point(input.width - 1, i)));
-    }
-    for (int i = 0; i < input.width; i++) {
-        v.addAll(scanRatio(input, new Point(i, 0), new Point(i, input.height - 1)));
-    }
-    h.retainAll(v);
-    return h.size() == 4 ? h.toArray(new Point[0]) : null;
-}
-
-private static ArrayList<Point> timingDots(Image input, Point start, Point end) {
-    input.ensureBinary();
-    ArrayList<Point> result = new ArrayList<Point>();
-    Point lastp = start;
-    int lastv = input.at(start);
-
-    for (Point p : input.line(start, end)) {
-        int v = input.at(p);
-        if (v != lastv) {
-            result.add(lastp.midpoint(p));
-            lastv = v;
             lastp = p;
         }
+        return result;
     }
-    return result;
+
+    private Point[] scanFinder(Image input) {
+        input.ensureBinary();
+        HashSet<Point> h = new HashSet<Point>(), v = new HashSet<Point>();
+        for (int i = 0; i < input.height; i++) {
+            h.addAll(scanRatio(input, new Point(0, i), new Point(input.width - 1, i)));
+        }
+        for (int i = 0; i < input.width; i++) {
+            v.addAll(scanRatio(input, new Point(i, 0), new Point(i, input.height - 1)));
+        }
+        h.retainAll(v);
+        return h.size() == 4 ? h.toArray(new Point[0]) : null;
+    }
+
+    private ArrayList<Point> timingDots(Image input, Point start, Point end) {
+        input.ensureBinary();
+        ArrayList<Point> result = new ArrayList<Point>();
+        Point lastp = null;
+        int lastv = input.at(start);
+        // We don't actually know when the first change is so set it to null
+
+        for (Point p : input.line(start, end)) {
+            int v = input.at(p);
+            if (v != lastv) {
+                if (lastp != null) {
+                    result.add(lastp.midpoint(p));
+                }
+                lastv = v;
+                lastp = p;
+            }
+        }
+        return result;
+    }
 }
