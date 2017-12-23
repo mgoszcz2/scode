@@ -1,4 +1,4 @@
-class DebugData {
+final class DebugData {
     private final int SIZE;
     private final int GRID_WIDTH;
     private final int GRID_HEIGHT;
@@ -19,12 +19,14 @@ class DebugData {
         mean = new float[GRID_WIDTH * GRID_HEIGHT];
     }
 
+    //FIXME: Depends on globals
     void resize() {
-        int w = (int)(frameImage.width * ((float)SIZE / frameImage.height) * GRID_WIDTH);
-        int h = debugData.showHeaders ? (GRID_HEADER + SIZE) * GRID_HEIGHT : SIZE * GRID_HEIGHT;
-        surface.setSize(w, h);
+        // int w = (int)(currentImage.width * ((float)SIZE / currentImage.height) * GRID_WIDTH);
+        // int h = debugData.showHeaders ? (GRID_HEADER + SIZE) * GRID_HEIGHT : SIZE * GRID_HEIGHT;
+        // surface.setSize(w, h);
     }
 
+    // Hack, we need a better vis arhitecture
     int windowWidth() {
         return width / GRID_WIDTH;
     }

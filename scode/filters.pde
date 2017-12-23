@@ -1,5 +1,16 @@
 import java.util.*;
 
+static void maskCombineInPlace(Image bg, Image fg, Image mask) {
+    assert bg.compatible(fg);
+    assert bg.equalSize(fg) && fg.equalSize(mask);
+    mask.ensureGrayscale();
+    for (int i = 0; i < mask.pixels.length; i++) {
+        if (mask.pixels[i] > 0) {
+            bg.pixels[i] = fg.pixels[i];
+        }
+    }
+}
+
 static Image mean(Image input, int k) {
     Image result = new Image(input);
     meanInPlace(result, k);
@@ -7,6 +18,9 @@ static Image mean(Image input, int k) {
 }
 
 static void meanInPlace(Image image, int k) {
+    // No blur
+    if (k == 0) return;
+
     image.ensureGrayscale();
     int[] summed = new int[image.height * image.width];
     summed[0] = image.pixels[0] & 0xff;
@@ -46,7 +60,7 @@ static Image binarize(Image image, Image values, float treshold) {
     image.ensureGrayscale();
     values.ensureGrayscale();
     assert image.equalSize(values);
-    Image result = Image.withSize(image);
+    Image result = Image.withSize(image, ImageKind.GRAYSCALE);
     for (int i = 0; i < image.pixels.length; i++) {
         result.pixels[i] = image.pixels[i] / (0.01 + values.pixels[i]) < treshold ? 0 : 255;
     }
@@ -154,7 +168,7 @@ static Image resize(Image image, int width, int height) {
 }
 
 static Image evenCrop(Image input, int width, int height) {
-    Image result = new Image(width, height);
+    Image result = new Image(width, height, input.kind);
     int d = (input.width - width)/2 + ((input.height - height)/2)*input.width;
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
@@ -201,23 +215,25 @@ static void saturateInPlace(Image input, float factor) {
     }
 }
 
-static Image vibrantBlur(Image input, int width, int height) {
-    // We resize down to max 100x100, blur it a lot and resize it back
-    float ratio = 100.0/input.width;
+// Blur 0.0-1.0, saturation 1.0-1.5 realesticly (255 reasonable max)
+static Image vibrantBlur(Image input, float blur, float saturation, int width, int height) {
+    // We resize down, blur it a lot and resize it back
+    final int resolution = input.width / 2;
+    float ratio = resolution/(float)input.width;
     Image[] channels = separate(resize(input, ratio));
     for (int i = 0; i < 3; i++) {
-        meanInPlace(channels[i], 16);
-        meanInPlace(channels[i], 8);
+        meanInPlace(channels[i], (int)(blur * resolution * 0.08));
+        meanInPlace(channels[i], (int)(blur * resolution * 0.04));
     }
     Image combined = combine(channels);
-    saturateInPlace(combined, 1.5);
+    saturateInPlace(combined, saturation);
     return resize(combined, width, height);
 }
 
 static Image gaussian(Image input, float sigma) {
     input.ensureGrayscale();
     float[] kernel = new float[ceil(sigma) * 6 + 1];
-    Image store = new Image(input.width - kernel.length + 1, input.height - kernel.length + 1);
+    Image store = new Image(input.width - kernel.length + 1, input.height - kernel.length + 1, ImageKind.GRAYSCALE);
     int[] convoluted = new int[store.width * input.height];
 
     float gsum = 0;

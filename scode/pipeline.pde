@@ -1,8 +1,13 @@
 static class DecoderData {
+    Image capture;
     Point[] corners;
     String content;
     String error;
     boolean silentError;
+
+    boolean success() {
+        return content != null;
+    }
 
     static DecoderData localisationError(String error) {
         DecoderData data = new DecoderData();
@@ -16,6 +21,26 @@ static class DecoderData {
         data.error = error;
         data.silentError = true;
         return data;
+    }
+}
+
+static class Pipeline implements Callable<DecoderData> {
+    final PImage input;
+
+    Pipeline(PImage input) {
+        this.input = input;
+    }
+
+    DecoderData call() {
+        Image original = new Image(input);
+        Image blurred = gaussian(grayscale(original), 1.0);
+        Image extraBlurred = mean(blurred, (int)(blurred.width * 0.04));
+        Image binary = binarize(blurred, extraBlurred, 0.8);
+        DecoderData result = decodeCode(evenCrop(original, binary.width, binary.height), binary);
+        // if (result.success()) {
+            result.capture = evenCrop(original, binary.width, binary.height);
+        // }
+        return result;
     }
 }
 
@@ -75,41 +100,27 @@ private static ArrayList<Point> timingDots(Image input, Point start, Point end) 
     return result;
 }
 
-private static void orderCorners(Point[] positions) {
-    final Point m = Point.mean(positions);
-    Arrays.sort(positions, new Comparator<Point>(){
-        public int compare(Point a, Point b) {
-            return Double.compare(a.subtract(m).atan2(), b.subtract(m).atan2());
-        }
-    });
-}
-
-private static int evenParity(int x) {
-    x ^= x >> 4;
-    x ^= x >> 2;
-    x ^= x >> 1;
-    return (~x) & 1;
-}
-
-static DecoderData decodeCode(Image bg, Image input) {
+static DecoderData decodeCode(Image capture, Image input) {
     input.ensureBinary();
     Point[] positions = scanFinder(input);
     if (positions == null) {
         return DecoderData.localisationError("Not enough fips");
     }
 
-    final int[] colors = {#ff0000, #00ff00, #0000ff, #ff00ff};
     orderCorners(positions);
-    ArrayList<Point> bits = timingDots(input, positions[0], positions[3]);
-    ArrayList<Point> right = timingDots(input, positions[0], positions[1]);
-    ArrayList<Point> left = timingDots(input, positions[3], positions[2]);
+    // Must be right to left like bits
+    ArrayList<Point> bits = timingDots(input, positions[1], positions[0]);
+    // Timing lines must be top to bottom
+    ArrayList<Point> right = timingDots(input, positions[1], positions[2]);
+    ArrayList<Point> left = timingDots(input, positions[0], positions[3]);
 
     if (left.size() != right.size()) {
         return DecoderData.localisationError("Unequal timing");
     }
 
-    Line top = new Line(positions[0], positions[3]);
-    Line bottom = new Line(positions[1], positions[2]);
+    // Must be the same direction
+    Line top = new Line(positions[0], positions[1]);
+    Line bottom = new Line(positions[3], positions[2]);
     int[] bytes = new int[left.size() - 5];
     int currentByte = 0;
 
@@ -141,12 +152,16 @@ static DecoderData decodeCode(Image bg, Image input) {
             return DecoderData.decodingError("Parity error");
         }
 
-        r += (char)(b & 0xff);
+        // Ignore padding null bytes
+        if ((b & 0xff) != 0) {
+            r += (char)(b & 0xff);
+        }
         boolean lb = (lfsr & 1) == 1;
         lfsr >>= 1;
         if (lb) lfsr ^= lfsrTap;
     }
 
+    //Note, 'capture' assigned in pipeline (sigh :( )
     DecoderData result = new DecoderData();
     result.content = r;
     result.corners = positions;

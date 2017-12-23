@@ -1,14 +1,96 @@
 import processing.video.*;
+import java.util.concurrent.*;
 
 Capture camera;
 boolean frameResized;
-PImage frameImage;
+PImage currentImage;
 boolean staticImage = false;
 boolean looping = true;
-DebugData debugData = new DebugData(300, 2, 2);
+FutureTask<DecoderData> decoderResult;
+final ExecutorService pool = Executors.newSingleThreadExecutor();
+final int GOAL_HEIGHT = 500;
+int lastDetection = millis();
+AnimationState animation;
+
+final class AnimationState {
+    private final static int FADE_TIME = 500;
+    // private final static int REVERSE_TIME = 900;
+    private final static int REVERSE_TIME = 8000;
+    // final static int ANIMATION_TIME = 1250;
+    final static int ANIMATION_TIME = REVERSE_TIME + 300;
+
+    private DecoderData data;
+    private int animationStart;
+    private Image codeMask, capture;
+    private Point textLoc;
+    private boolean leftText;
+
+    AnimationState(DecoderData data) {
+        this.data = data;
+        animationStart = millis();
+        capture = resize(data.capture, width, height);
+
+        Point[] mpts = new Point[4];
+        for (int i = 0; i < 4; i++) {
+            mpts[i] = data.corners[i].map(data.capture.width, data.capture.height, width, height);
+        }
+        Point mean = Point.mean(mpts);
+        for (int i = 0; i < 4; i++) {
+            mpts[i] = mpts[i].add(mpts[i].subtract(mean).divide(5));
+        }
+        Point left = Point.mean(new Point[]{mpts[0], mpts[3]});
+        Point right = Point.mean(new Point[]{mpts[1], mpts[2]});
+
+        int ynudge = height / 8;
+        int xnudge = width / 10;
+        if (left.x > width - right.x) {
+            textLoc = new Point(left.x - xnudge, left.y - ynudge);
+            leftText = true;
+        } else {
+            textLoc = new Point(right.x + xnudge, right.y - ynudge);
+            leftText = false;
+        }
+        codeMask = polygon(width, height, mpts);
+    }
+
+    void draw(PApplet app, PImage currentImage) {
+        int t = millis() - animationStart;
+        Image input = new Image(currentImage);
+        float blur = 0.0;
+        float saturation = 1.0;
+        boolean mask = true;
+        int opacity = 255;
+
+        if (t <= FADE_TIME) {
+            float progress = t / (float)FADE_TIME;
+            saturation = 1.0 + progress * 0.4;
+            blur = progress*progress;
+        } else if (t <= REVERSE_TIME) {
+            saturation = 1.4;
+            blur = 1.0;
+        } else {
+            float progress = 1.0 - (t - REVERSE_TIME) / (float)(ANIMATION_TIME - REVERSE_TIME);
+            saturation = 1.0 + progress * 0.4;
+            blur = progress;
+            mask = false;
+        }
+
+        Image res = vibrantBlur(input, blur, saturation, width, height);
+        if (mask) maskCombineInPlace(res, capture, codeMask);
+        image(res.get(app), 0, 0, width, height);
+        textAlign(leftText ? RIGHT : LEFT, CENTER);
+        textSize(30);
+        text(data.content, textLoc.x, textLoc.y);
+    }
+
+    boolean running() {
+        return millis() - animationStart < ANIMATION_TIME;
+    }
+}
 
 void resize() {
-    debugData.resize();
+    float w = currentImage.width * (GOAL_HEIGHT / (float)currentImage.height);
+    surface.setSize((int)w, GOAL_HEIGHT);
     frameResized = true;
 }
 
@@ -27,21 +109,24 @@ void keyPressed() {
             camera.stop();
             noLoop();
         }
-
-    } else if (key == 19) { // C-s
-        debugData.showHeaders = !debugData.showHeaders;
-        resize();
     }
 }
 
 void setup() {
+    PFont font = loadFont("futura.vlw");
+    textFont(font, 30);
     size(0, 0);
     pixelDensity(displayDensity());
+    // An issue with processing, changing pixelDensity breaks
+    // textAlign function, known bug https://github.com/processing/processing/issues/4674
+    // Setting textSize fixes it back
+    textSize(12);
     noSmooth();
+    frameRate(24);
     surface.setTitle("S*Code");
     if (args != null && args.length > 0) {
         staticImage = true;
-        frameImage = loadImage(args[0]);
+        currentImage = loadImage(args[0]);
         resize();
     } else {
         String[] cameras = Capture.list();
@@ -54,29 +139,51 @@ void draw() {
     if (!staticImage) {
         if (!camera.available()) return;
         camera.read();
-        frameImage = camera;
+        currentImage = camera;
         if (!frameResized) {
             resize();
             // We must skip the frame to fix up or pixels array
             return;
         }
-        frameImage = camera;
+        currentImage = camera;
     }
 
-    DebugData.Drawer drawer = debugData.new Drawer(this);
-    drawer.begin();
+    clear();
+    stroke(255);
+    if (animation != null && animation.running()) {
+        animation.draw(this, currentImage);
 
-    Image orignal = new Image(frameImage);
-    drawer.draw("Original", orignal);
-    orignal.grayscale();
-    Image resized = gaussian(orignal, 1.0);
-    drawer.draw("Processed", resized);
-    Image blurred = mean(resized, (int)(resized.width * 0.04));
-    Image binary = binarize(resized, blurred, 0.8);
-    drawer.draw("Binarized", binary);
-    DecoderData decoded = decodeCode(resized, binary);
-    drawer.draw("Outline", vibrantBlur(new Image(frameImage), debugData.windowWidth(), debugData.windowHeight()));
+    } else {
+        if (decoderResult == null) {
+            decoderResult = new FutureTask(new Pipeline(currentImage));
+            pool.submit(decoderResult);
+        }
 
-    drawer.end();
+        noStroke();
+        image(currentImage, 0, 0, width, height);
+        textSize(12);
+        textAlign(LEFT, CENTER);
+        text(round(frameRate) + " fps", 15, 15);
+        if (decoderResult.isDone()) {
+            try {
+                DecoderData data = decoderResult.get();
+                if (data.success()) {
+                    animation = new AnimationState(data);
+                }
+                decoderResult = null;
+                fill(255);
+                textAlign(RIGHT, CENTER);
+                text(data.error == null ? "Decoded" : data.error, width - 30, height - 15);
+                ellipse(width - 15, height - 15, 10, 10);
+            } catch (InterruptedException e) {
+                println(e);
+                println("Well feck");
+            } catch (ExecutionException e) {
+                println(e);
+                println("Well feck");
+            }
+        }
+    }
+
     if (staticImage) noLoop();
 }
