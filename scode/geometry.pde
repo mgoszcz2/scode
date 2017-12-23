@@ -33,6 +33,10 @@ final static class Point {
         return Math.atan2(y, x);
     }
 
+    Point mean(Point h) {
+        return new Point((x + h.x) / 2, (y + h.y) / 2);
+    }
+
     String toString() {
         return String.format("(%d, %d)", x, y);
     }

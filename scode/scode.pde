@@ -27,8 +27,8 @@ final class AnimationState {
         for (int i = 0; i < 4; i++) {
             mpts[i] = mpts[i].add(mpts[i].subtract(mean).divide(5));
         }
-        Point left = Point.mean(new Point[]{mpts[0], mpts[3]});
-        Point right = Point.mean(new Point[]{mpts[1], mpts[2]});
+        Point left = mpts[0].mean(mpts[3]);
+        Point right = mpts[1].mean(mpts[2]);
 
         int ynudge = height / 8;
         int xnudge = width / 10;
