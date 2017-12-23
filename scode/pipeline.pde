@@ -35,11 +35,72 @@ static class Pipeline implements Callable<DecoderData> {
         Image original = new Image(input);
         Image blurred = gaussian(grayscale(original), 1.0);
         Image extraBlurred = mean(blurred, (int)(blurred.width * 0.04));
-        Image binary = binarize(blurred, extraBlurred, 0.8);
-        DecoderData result = decodeCode(evenCrop(original, binary.width, binary.height), binary);
-        // if (result.success()) {
-            result.capture = evenCrop(original, binary.width, binary.height);
-        // }
+        Image input = binarize(blurred, extraBlurred, 0.8);
+
+        Point[] positions = scanFinder(input);
+        if (positions == null) {
+            return DecoderData.localisationError("Not enough fips");
+        }
+
+        orderCorners(positions);
+        // Must be right to left like bits
+        ArrayList<Point> bits = timingDots(input, positions[1], positions[0]);
+        // Timing lines must be top to bottom
+        ArrayList<Point> right = timingDots(input, positions[1], positions[2]);
+        ArrayList<Point> left = timingDots(input, positions[0], positions[3]);
+
+        if (left.size() != right.size()) {
+            return DecoderData.localisationError("Unequal timing");
+        }
+
+        // Must be the same direction
+        Line top = new Line(positions[0], positions[1]);
+        Line bottom = new Line(positions[3], positions[2]);
+        int[] bytes = new int[left.size() - 5];
+        int currentByte = 0;
+
+        for (int j = 3; j < bits.size() - 2; j++) {
+            Point p = bits.get(j);
+            Line bitLine = new Line(p, bottom.atRatio(top.ratio(p)));
+
+            for (int i = 3; i < left.size() - 2; i++) {
+                Point isect = new Line(left.get(i), right.get(i)).intersection(bitLine);
+                if (isect != null) {
+                    if (input.at(isect) == 0) {
+                        bytes[i-3] |= 1 << (j - 3);
+                    }
+                }
+            }
+        }
+
+        final int lfsrTap = 0x7ae;
+        String r = "";
+
+        if (bytes[bytes.length - 1] != 1) {
+            return DecoderData.decodingError("Not version 1");
+        }
+
+        int lfsr = 1;
+        for (int i = 0; i < bytes.length - 1; i++) {
+            int b = bytes[i] ^ lfsr;
+            if (evenParity(b & 0xff) != ((b >> 8) & 1)) {
+                return DecoderData.decodingError("Parity error");
+            }
+
+            // Ignore padding null bytes
+            if ((b & 0xff) != 0) {
+                r += (char)(b & 0xff);
+            }
+            boolean lb = (lfsr & 1) == 1;
+            lfsr >>= 1;
+            if (lb) lfsr ^= lfsrTap;
+        }
+
+        //Note, 'capture' assigned in pipeline (sigh :( )
+        DecoderData result = new DecoderData();
+        result.content = r;
+        result.corners = positions;
+        result.capture = evenCrop(original, input.width, input.height);
         return result;
     }
 }
@@ -97,73 +158,5 @@ private static ArrayList<Point> timingDots(Image input, Point start, Point end) 
             lastp = p;
         }
     }
-    return result;
-}
-
-static DecoderData decodeCode(Image capture, Image input) {
-    input.ensureBinary();
-    Point[] positions = scanFinder(input);
-    if (positions == null) {
-        return DecoderData.localisationError("Not enough fips");
-    }
-
-    orderCorners(positions);
-    // Must be right to left like bits
-    ArrayList<Point> bits = timingDots(input, positions[1], positions[0]);
-    // Timing lines must be top to bottom
-    ArrayList<Point> right = timingDots(input, positions[1], positions[2]);
-    ArrayList<Point> left = timingDots(input, positions[0], positions[3]);
-
-    if (left.size() != right.size()) {
-        return DecoderData.localisationError("Unequal timing");
-    }
-
-    // Must be the same direction
-    Line top = new Line(positions[0], positions[1]);
-    Line bottom = new Line(positions[3], positions[2]);
-    int[] bytes = new int[left.size() - 5];
-    int currentByte = 0;
-
-    for (int j = 3; j < bits.size() - 2; j++) {
-        Point p = bits.get(j);
-        Line bitLine = new Line(p, bottom.atRatio(top.ratio(p)));
-
-        for (int i = 3; i < left.size() - 2; i++) {
-            Point isect = new Line(left.get(i), right.get(i)).intersection(bitLine);
-            if (isect != null) {
-                if (input.at(isect) == 0) {
-                    bytes[i-3] |= 1 << (j - 3);
-                }
-            }
-        }
-    }
-
-    final int lfsrTap = 0x7ae;
-    String r = "";
-
-    if (bytes[bytes.length - 1] != 1) {
-        return DecoderData.decodingError("Not version 1");
-    }
-
-    int lfsr = 1;
-    for (int i = 0; i < bytes.length - 1; i++) {
-        int b = bytes[i] ^ lfsr;
-        if (evenParity(b & 0xff) != ((b >> 8) & 1)) {
-            return DecoderData.decodingError("Parity error");
-        }
-
-        // Ignore padding null bytes
-        if ((b & 0xff) != 0) {
-            r += (char)(b & 0xff);
-        }
-        boolean lb = (lfsr & 1) == 1;
-        lfsr >>= 1;
-        if (lb) lfsr ^= lfsrTap;
-    }
-
-    //Note, 'capture' assigned in pipeline (sigh :( )
-    DecoderData result = new DecoderData();
-    result.content = r;
-    result.corners = positions;
     return result;
 }

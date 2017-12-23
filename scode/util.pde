@@ -67,6 +67,7 @@ static float[] rgbToHsv(int rgb) {
    return new float[] {hue, saturation, brightness};
 }
 
+// Ripped from eclipse http://kickjava.com/src/org/eclipse/swt/graphics/RGB.java.htm
 static int hsvToRgb(float hsv[]) {
     float hue = hsv[0], saturation = hsv[1], brightness = hsv[2];
     float r, g, b;
