@@ -36,6 +36,7 @@ static class Pipeline implements Callable<DecoderData> {
         Image blurred = gaussian(grayscale(original), 1.0);
         Image extraBlurred = mean(blurred, (int)(blurred.width * 0.04));
         Image binary = binarize(blurred, extraBlurred, 0.8);
+        Image colorBinary = binarize(blurred, extraBlurred, 1.0);
 
         Point[] corners = scanFinder(binary);
         if (corners == null) {
@@ -45,17 +46,18 @@ static class Pipeline implements Callable<DecoderData> {
         Point[] originalCorners = new Point[corners.length];
         arrayCopy(corners, originalCorners);
 
-        DecoderData result = decodeWithCorners(binary, corners);
+        DecoderData result = decodeWithCorners(colorBinary, corners);
         if (result.error != null) {
             for (int i = 0; i < 3; i++) {
                 shiftArray(corners);
-                DecoderData r = decodeWithCorners(binary, corners);
+                DecoderData r = decodeWithCorners(colorBinary, corners);
                 if (r.error == null) {
                     result = r;
                     break;
                 }
             }
         }
+        result.debugView = colorBinary;
         if (result.error == null) {
             result.corners = originalCorners;
             result.capture = evenCrop(original, binary.width, binary.height);
@@ -80,14 +82,14 @@ static class Pipeline implements Callable<DecoderData> {
         int[] bytes = new int[left.size() - 4];
         int currentByte = 0;
 
-        Image debugView = new Image(input, ImageKind.COLOR);
-        for (int i = 0; i < left.size(); i++) {
-            debugView.drawLine(#ff0000, new Line(left.get(i), right.get(i)));
-        }
-        for (int j = 2; j < bits.size() - 2; j++) {
-            Point p = bits.get(j);
-            debugView.drawLine(#00ff00, new Line(p, bottom.atRatio(top.ratio(p))));
-        }
+        // Image debugView = new Image(input, ImageKind.COLOR);
+        // for (int i = 0; i < left.size(); i++) {
+        //     debugView.drawLine(#ff0000, new Line(left.get(i), right.get(i)));
+        // }
+        // for (int j = 2; j < bits.size() - 2; j++) {
+        //     Point p = bits.get(j);
+        //     debugView.drawLine(#00ff00, new Line(p, bottom.atRatio(top.ratio(p))));
+        // }
 
         for (int j = 2; j < bits.size() - 2; j++) {
             Point p = bits.get(j);
@@ -106,9 +108,7 @@ static class Pipeline implements Callable<DecoderData> {
 
         Result<String, String> decoded = decodeBytes(bytes);
         if (decoded.error != null) {
-            DecoderData result = DecoderData.decodingError(decoded.error);
-            result.debugView = debugView;
-            return result;
+            return DecoderData.decodingError(decoded.error);
         }
         DecoderData result = new DecoderData();
         result.content = decoded.result;
