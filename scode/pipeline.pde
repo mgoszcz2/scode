@@ -57,7 +57,6 @@ static class Pipeline implements Callable<DecoderData> {
                 }
             }
         }
-        result.debugView = colorBinary;
         if (result.error == null) {
             result.corners = originalCorners;
             result.capture = evenCrop(original, binary.width, binary.height);

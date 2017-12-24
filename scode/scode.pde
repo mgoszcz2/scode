@@ -1,5 +1,6 @@
 import processing.video.*;
 import java.util.concurrent.*;
+import processing.sound.*;
 
 final class AnimationState {
     private final static int FADE_TIME = 500;
@@ -112,10 +113,11 @@ final ExecutorService pool = Executors.newSingleThreadExecutor();
 final int GOAL_HEIGHT = 500;
 int lastDetection = millis();
 AnimationState animation;
-
+SoundFile beep;
 
 void setup() {
     PFont font = loadFont("futura.vlw");
+    beep = new SoundFile(this, "beep.wav");
     textFont(font, 30);
     size(0, 0);
     pixelDensity(displayDensity());
@@ -174,11 +176,12 @@ void draw() {
                 DecoderData data = decoderResult.get();
                 if (data.success()) {
                     animation = new AnimationState(data);
+                    beep.play();
                 }
                 decoderResult = null;
-                // if (data.debugView != null) {
-                //     debugView = data.debugView.get(this);
-                // }
+                if (data.debugView != null) {
+                    debugView = data.debugView.get(this);
+                }
                 fill(255);
                 textAlign(RIGHT, CENTER);
                 text(data.error == null ? "Decoded" : data.error, width - 30, height - 15);

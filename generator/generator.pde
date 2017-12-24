@@ -6,6 +6,7 @@ final int TIMING_RADIUS = 8;
 final color[] COLORS = {#ff3b30, #ff9500, #ffcc00, #4cd964, #5ac8fa, #007aff, #5856d6, #ff2d55};
 final int lfsrTap = 0x7ae;
 boolean simpleMode = false;
+boolean showMask = false;
 boolean showGrid = false;
 boolean showColors = true;
 
@@ -49,6 +50,7 @@ void keyPressed() {
     } else if (key != CODED) {
         if (key == 7) showGrid = !showGrid; // C-c
         else if (key == 19) simpleMode = !simpleMode; // C-s
+        else if (key == 14) showMask = !showMask; // C-n
         else if (key == 5) save(fileName()); // C-e
         else if (key == 3) showColors = !showColors; // C-c
         else typed += key;
@@ -85,8 +87,13 @@ int evenParity(int x) {
 int lfsr = 0;
 void drawChar(boolean mask, byte t, int i) {
     if (i == 0) lfsr = 1;
-    int val = t | (evenParity(t) << 8);
-    if (mask && !simpleMode) val ^= lfsr;
+    int val;
+    if (showMask) {
+        val = mask ? lfsr : 0;
+    } else {
+        val = t | (evenParity(t) << 8);
+        if (mask && !simpleMode) val ^= lfsr;
+    }
     for (int j = 0; j < 9; j++) {
         if ((val & (1 << (8 - j))) == 0) continue;
         int x = TIMING_RADIUS*6 + j*TIMING_RADIUS*2;
