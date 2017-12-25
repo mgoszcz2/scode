@@ -16,14 +16,6 @@ static <T> void ringPush(T[] buf, T item) {
     buf[buf.length - 1] = item;
 }
 
-// static <T> void reverse(T[] arr) {
-//     for (int i = 0; i < arr.length / 2; i++) {
-//         int t = arr[i];
-//         arr[i] = arr[arr.length - i - 1];
-//         arr[arr.length - i - 1] = t;
-//     }
-// }
-
 // Orders corner of a polygon (atan2 style unit circle)
 private static void orderCorners(Point[] corners) {
     final Point m = Point.mean(corners);

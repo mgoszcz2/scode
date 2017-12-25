@@ -5,7 +5,7 @@ import processing.sound.*;
 final class AnimationState {
     private final static int FADE_TIME = 500;
     // private final static int REVERSE_TIME = 900;
-    private final static int REVERSE_TIME = 900;
+    private final static int REVERSE_TIME = 1500;
     // final static int ANIMATION_TIME = 1250;
     final static int ANIMATION_TIME = REVERSE_TIME + 300;
 

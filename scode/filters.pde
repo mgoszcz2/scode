@@ -68,37 +68,6 @@ static Image binarize(Image image, Image values, float treshold) {
     return result;
 }
 
-private static void flood(boolean[] result, Image input, int x, int y) {
-    int ix = y*input.width + x;
-    if (input.invalid(x, y) || result[ix] || input.pixels[ix] == 0) {
-        return;
-    }
-    result[y*input.width + x] = true;
-    flood(result, input, x + 1, y);
-    flood(result, input, x - 1, y);
-    flood(result, input, x, y + 1);
-    flood(result, input, x, y - 1);
-}
-
-static Point[] components(Image bg, Image input) {
-    input.ensureGrayscale();
-    boolean[] store = new boolean[input.width * input.height];
-    Point[] result = new Point[4];
-    int component = 0;
-
-    for (int y = 0; y < input.height; y++) {
-        for (int x = 0; x < input.width; x++) {
-            int ix = y*input.width + x;
-            if (!store[ix] && input.pixels[ix] > 0) {
-                flood(store, input, x, y);
-                if (component >= 4) return null;
-                result[component++] = new Point(x, y);
-            }
-        }
-    }
-    return component == 4 ? result : null;
-}
-
 static Image resize(Image image, float ratio) {
     return resize(image, round(image.width * ratio), round(image.height * ratio));
 }
@@ -270,36 +239,6 @@ static Image gaussian(Image input, float sigma) {
         }
     }
     return store;
-}
-
-static Image morph(Image input, int k, boolean dilute) {
-    input.ensureBinary();
-    Image result = Image.withSize(input, ImageKind.BINARY);
-    for (int y = k; y < input.height - k - 1; y++) {
-        for (int x = k; x < input.width - k - 1; x++) {
-            boolean r = dilute;
-            for (int dy = -k; dy <= k; dy++) {
-                for (int dx = -k - dy; dx <= k - dy; dx++) {
-                    if (dilute) {
-                        r &= input.pixels[(y + dy)*input.width + x + dx] > 0;
-                    } else {
-                        r |= input.pixels[(y + dy)*input.width + x + dx] > 0;
-                    }
-                }
-            }
-            result.pixels[y*input.width + x] = r ? 255 : 0;
-        }
-    }
-    return result;
-}
-
-static Image combine(Image a, Image b, boolean both) {
-    assert a.equalSize(b) && a.compatible(b);
-    Image result = new Image(a.width, a.height, a.kind);
-    for (int i = 0; i < a.pixels.length; i++) {
-        result.pixels[i] = both ? a.pixels[i] & b.pixels[i] : a.pixels[i] | b.pixels[i];
-    }
-    return result;
 }
 
 static void drawBin(PGraphics result, color cl, int[] bin, int height, int mb) {

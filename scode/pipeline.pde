@@ -79,7 +79,6 @@ static class Pipeline implements Callable<DecoderData> {
         Line top = new Line(positions[0], positions[1]);
         Line bottom = new Line(positions[3], positions[2]);
         int[] bytes = new int[left.size() - 4];
-        int currentByte = 0;
 
         // Image debugView = new Image(input, ImageKind.COLOR);
         // for (int i = 0; i < left.size(); i++) {
